@@ -3,11 +3,14 @@ import torch, numpy as np
 import torch.utils.tensorboard as tb
 from torch.nn.utils.rnn import pad_packed_sequence
 
-from quickdrawstrokes import QuickDrawStrokes
+# from quickdrawstrokes import QuickDrawStrokes
+from quickdraw.quickdraw import QuickDraw
 from strokeae import RNNStrokeAE, StrokeMSELoss
 
 def main( args ):
-    qds = QuickDrawStrokes(args.root, max_sketches=500, start_from_zero=False)
+    qds = QuickDraw(args.root, max_samples=5000, mode=QuickDraw.STROKE, #start_from_zero=True,
+        categories=['airplane', 'bus'], verbose=True,
+        seperate_p_tensor=True, shifted_seq_as_supevision=True)
     qdl = qds.get_dataloader(args.batch_size)
 
     model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec)
@@ -24,9 +27,9 @@ def main( args ):
 
     count = 0
     for e in range(args.epochs):
-        for i, (X, (Y, P)) in enumerate(qdl):
+        for i, ((X, _), (Y, P), _) in enumerate(qdl):
             (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
-
+            breakpoint()
             h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
                 X, Y, P = X.cuda(), Y.cuda(), P.cuda()

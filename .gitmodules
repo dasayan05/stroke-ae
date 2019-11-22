@@ -1,0 +1,3 @@
+[submodule "quickdraw"]
+	path = quickdraw
+	url = gitlab@gitlab.eps.surrey.ac.uk:ad01424/quickdraw_nn_dataset.git
