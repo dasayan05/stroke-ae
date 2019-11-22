@@ -29,7 +29,7 @@ def main( args ):
     for e in range(args.epochs):
         for i, ((X, _), (Y, P), _) in enumerate(qdl):
             (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
-            breakpoint()
+
             h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
                 X, Y, P = X.cuda(), Y.cuda(), P.cuda()
