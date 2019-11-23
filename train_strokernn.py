@@ -7,7 +7,7 @@ from strokernn import StrokeRNN
 from strokeae import StrokeMSELoss
 
 def main( args ):
-    dataset = QuickDraw(args.root, categories=['face'], max_samples=75000, mode=QuickDraw.SKETCH, verbose=True,
+    dataset = QuickDraw(args.root, categories=['face'], max_sketches_each_cat=15000, mode=QuickDraw.SKETCH, verbose=True,
         seperate_p_tensor=True, shifted_seq_as_supevision=True,
         filter_func=lambda s: (True, [s[0],]))
     dataloader = dataset.get_dataloader(batch_size=args.batch_size)
