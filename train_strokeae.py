@@ -8,7 +8,7 @@ from quickdraw.quickdraw import QuickDraw
 from strokeae import RNNStrokeAE, StrokeMSELoss
 
 def main( args ):
-    qds = QuickDraw(args.root, max_samples=50000, mode=QuickDraw.STROKE, #start_from_zero=True,
+    qds = QuickDraw(args.root, max_samples=50000, mode=QuickDraw.STROKE, start_from_zero=True,
         categories=['airplane', 'bus', 'face'], verbose=True,
         seperate_p_tensor=True, shifted_seq_as_supevision=True)
     qds_train, qds_test = qds.split(0.8)
