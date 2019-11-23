@@ -1,6 +1,6 @@
 import torch, pdb
 import torch.nn as nn
-from torch.nn.utils.rnn import pad_packed_sequence
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 class RNNStrokeEncoder(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, dtype=torch.float32, bidirectional=True, dropout=0.5):
@@ -50,7 +50,8 @@ class RNNStrokeDecoder(nn.Module):
         return out, P
 
 class RNNStrokeAE(nn.Module):
-    def __init__(self, n_input, n_hidden, n_layer, n_output, dtype=torch.float32, bidirectional=True, dropout=0.5):
+    def __init__(self, n_input, n_hidden, n_layer, n_output, dtype=torch.float32, bidirectional=True,
+                ip_free_decoding=False, dropout=0.5):
         super().__init__()
 
         # Track parameters
@@ -59,6 +60,7 @@ class RNNStrokeAE(nn.Module):
         self.dtype = dtype
         self.bidirectional = 2 if bidirectional else 1
         self.dropout = dropout
+        self.ip_free_decoding = ip_free_decoding
 
         self.encoder = RNNStrokeEncoder(self.n_input, self.n_hidden, self.n_layer,
             dtype=self.dtype, bidirectional=bidirectional, dropout=self.dropout)
@@ -67,6 +69,10 @@ class RNNStrokeAE(nn.Module):
 
     def forward(self, x, h_initial):
         latent = self.encoder(x, h_initial)
+        if self.ip_free_decoding:
+            x, l = pad_packed_sequence(x)
+            x = torch.zeros_like(x) # Input free decoder
+            x = pack_padded_sequence(x, l, enforce_sorted=False)
         out, P = self.decoder(x, latent)
         return out, P
 

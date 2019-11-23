@@ -15,7 +15,7 @@ def main( args ):
     qdl_train = qds_train.get_dataloader(args.batch_size)
     qdl_test = qds_test.get_dataloader(args.batch_size)
 
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec)
+    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec)
     model = model.float()
     if torch.cuda.is_available():
         model = model.cuda()
@@ -86,6 +86,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--root', type=str, required=True, help='quickdraw binary file')
+    parser.add_argument('--ip_free_dec', action='store_true', help='Decoder inputs are zero')
     parser.add_argument('-b','--batch_size', type=int, required=False, default=32, help='batch size')
     parser.add_argument('--lr', type=float, required=False, default=1e-4, help='learning rate')
     parser.add_argument('--hidden', type=int, required=False, default=128, help='no. of hidden neurons')
