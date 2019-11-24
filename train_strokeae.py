@@ -15,7 +15,7 @@ def main( args ):
     qdl_train = qds_train.get_dataloader(args.batch_size)
     qdl_test = qds_test.get_dataloader(args.batch_size)
 
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec)
+    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=self.ip_free_dec)
     model = model.float()
     if torch.cuda.is_available():
         model = model.cuda()
