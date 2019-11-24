@@ -36,8 +36,8 @@ class RNNStrokeDecoder(nn.Module):
         self.next = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
         self.p = torch.nn.Linear(self.n_hidden * self.bidirectional, 1)
 
-    def forward(self, x, h_initial):
-        out, _ = self.cell(x, h_initial)
+    def forward(self, x, h_initial, return_state=False):
+        out, state = self.cell(x, h_initial)
         hns, lengths = pad_packed_sequence(out, batch_first=True)
         # pdb.set_trace()
         
@@ -47,7 +47,10 @@ class RNNStrokeDecoder(nn.Module):
             out.append(self.next(h))
             P.append(torch.sigmoid(self.p(h)))
         
-        return out, P
+        if not return_state:
+            return out, P
+        else:
+            return (out, P), state
 
 class RNNStrokeAE(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, n_output, dtype=torch.float32, bidirectional=True,

@@ -8,7 +8,7 @@ from strokeae import RNNStrokeAE
 
 def main( args ):
     qds = QuickDraw(args.root, categories=['face', 'airplane'], max_sketches_each_cat=2, mode=QuickDraw.STROKE,
-        start_from_zero=True, verbose=True, seperate_p_tensor=True, shifted_seq_as_supevision=True)
+        start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(1)
 
     model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec)
@@ -25,7 +25,7 @@ def main( args ):
     model.eval()
     
     with torch.no_grad():
-        for i, ((X, _), (Y, _), _) in enumerate(qdl):
+        for i, (X, (_, _, _), _) in enumerate(qdl):
             h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
                 X, h_initial = X.cuda(), h_initial.cuda()
@@ -33,35 +33,38 @@ def main( args ):
             X_, l_ = pad_packed_sequence(X)
             if l_.item() < 3:
                 continue
-            Y_, _ = pad_packed_sequence(Y)
+
             if torch.cuda.is_available():
                 X_numpy = X_.squeeze().cpu().numpy() # get rid of the obvious 1-th dimension which is 1 (because batch_size == 1)
-                Y_numpy = Y_.squeeze().cpu().numpy()
             else:
                 X_numpy = X_.squeeze().numpy()
-                Y_numpy = Y_.squeeze().numpy()
-            X_numpy = np.vstack((X_numpy, Y_numpy[-1,:])) # Append the last one; TODO: NEED FIXING
 
-            latent = model.encoder(X, h_initial)
-            if args.ip_free_dec:
-                X_ = torch.zeros_like(X_) # Input free decoder
-                X_ = pack_padded_sequence(X_, l_, enforce_sorted=False)
-            out, P = model.decoder(X_, latent)
+            h_init = model.encoder(X, h_initial)
+
+            curve = np.empty((0, 2))
+            x_init = torch.tensor([[0., 0.]], dtype=torch.float32)
+            px = pack_padded_sequence(x_init.unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
+            
             if torch.cuda.is_available():
-                out_numpy = out[0].cpu().numpy()
-                P_numpy = P[0].cpu().numpy()
-            else:
-                out_numpy = out[0].numpy()
-                P_numpy = P[0].cpu().numpy()
-            out_numpy = np.vstack((np.array([0., 0.]), out_numpy))
-            P_numpy = np.vstack((np.array([0.,]), P_numpy))
+                px = px.cuda()
+            
+            model.eval()
+            stop = False
+            with torch.no_grad():
+                while not stop:
+                    (y, p), s = model.decoder(px, h_init, return_state=True)
+                    curve = np.vstack((curve, y[0].detach().cpu().numpy()))
+                    if not args.ip_free_dec:
+                        px = pack_padded_sequence(y[0].unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
+                    h_init = s
+                    print(p[0].item())
+                    stop = True if p[0].item() > 0.75 else False
 
             fig, ax = plt.subplots(1, 2)
             ax[0].plot(X_numpy[:,0], X_numpy[:,1])
-            ax[1].plot(out_numpy[:,0], out_numpy[:,1])
+            ax[1].plot(curve[:,0], curve[:,1])
             plt.savefig(str(i) + '.png')
             plt.close()
-
 
 if __name__ == '__main__':
     import argparse
