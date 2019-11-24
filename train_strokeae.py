@@ -32,15 +32,15 @@ def main( args ):
 
         model.eval()
         avg_loss, c = 0., 0
-        for i, ((X, _), (Y, P), _) in enumerate(qdl_test):
+        for i, (X, (X_, Y, P), _) in enumerate(qdl_test):
             (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
 
             h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
-                X, Y, P = X.cuda(), Y.cuda(), P.cuda()
+                X, X_, Y, P = X.cuda(), X_.cuda(), Y.cuda(), P.cuda()
                 h_initial = h_initial.cuda()
             
-            out, p = model(X, h_initial)
+            out, p = model(X, X_, h_initial)
 
             loss = strokemse(out, p, Y, P, L)
             avg_loss = ((avg_loss * c) + loss.item()) / (c + 1)
@@ -49,15 +49,15 @@ def main( args ):
         writer.add_scalar('test_loss', avg_loss, global_step=count)
 
         model.train()
-        for i, ((X, _), (Y, P), _) in enumerate(qdl_train):
+        for i, (X, (X_, Y, P), _) in enumerate(qdl_train):
             (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
 
             h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
-                X, Y, P = X.cuda(), Y.cuda(), P.cuda()
+                X, X_, Y, P = X.cuda(), X_.cuda(), Y.cuda(), P.cuda()
                 h_initial = h_initial.cuda()
             
-            out, p = model(X, h_initial)
+            out, p = model(X, X_, h_initial)
 
             loss = strokemse(out, p, Y, P, L)
             
