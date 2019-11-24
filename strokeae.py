@@ -67,13 +67,13 @@ class RNNStrokeAE(nn.Module):
         self.decoder = RNNStrokeDecoder(self.n_input, self.n_hidden, self.n_layer, self.n_output,
             dtype=self.dtype, bidirectional=bidirectional, dropout=self.dropout)
 
-    def forward(self, x, h_initial):
+    def forward(self, x, x_, h_initial):
         latent = self.encoder(x, h_initial)
         if self.ip_free_decoding:
-            x, l = pad_packed_sequence(x)
-            x = torch.zeros_like(x) # Input free decoder
-            x = pack_padded_sequence(x, l, enforce_sorted=False)
-        out, P = self.decoder(x, latent)
+            x_, l = pad_packed_sequence(x_)
+            x_ = torch.zeros_like(x_) # Input free decoder
+            x_ = pack_padded_sequence(x_, l, enforce_sorted=False)
+        out, P = self.decoder(x_, latent)
         return out, P
 
 class StrokeMSELoss(nn.Module):
