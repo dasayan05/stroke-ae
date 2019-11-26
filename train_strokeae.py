@@ -14,13 +14,13 @@ def main( args ):
     qdl_train = qds_train.get_dataloader(args.batch_size)
     qdl_test = qds_test.get_dataloader(args.batch_size)
 
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec)
+    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec, bezier_degree=args.bezier_degree)
     model = model.float()
     if torch.cuda.is_available():
         model = model.cuda()
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr)
-    strokemse = StrokeMSELoss()
+    strokemse = StrokeMSELoss(bezier_degree=args.bezier_degree)
 
     curloss = np.inf
 
@@ -57,7 +57,6 @@ def main( args ):
                 h_initial = h_initial.cuda()
             
             out, p = model(X, X_, h_initial)
-
             loss = strokemse(out, p, Y, P, L)
             
             if i % args.interval == 0:
@@ -96,6 +95,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--interval', type=int, required=False, default=100, help='logging interval')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')
+    parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=0, help='degree of the bezier')
     args = parser.parse_args()
 
     main( args )

@@ -2,6 +2,8 @@ import torch, pdb
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
+from bezierloss import BezierLoss
+
 class RNNStrokeEncoder(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, dtype=torch.float32, bidirectional=True, dropout=0.5):
         super().__init__()
@@ -54,7 +56,7 @@ class RNNStrokeDecoder(nn.Module):
 
 class RNNStrokeAE(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, n_output, dtype=torch.float32, bidirectional=True,
-                ip_free_decoding=False, dropout=0.5):
+                ip_free_decoding=False, bezier_degree=0, dropout=0.5):
         super().__init__()
 
         # Track parameters
@@ -64,30 +66,47 @@ class RNNStrokeAE(nn.Module):
         self.bidirectional = 2 if bidirectional else 1
         self.dropout = dropout
         self.ip_free_decoding = ip_free_decoding
+        self.bezier_degree = bezier_degree
 
         self.encoder = RNNStrokeEncoder(self.n_input, self.n_hidden, self.n_layer,
             dtype=self.dtype, bidirectional=bidirectional, dropout=self.dropout)
-        self.decoder = RNNStrokeDecoder(self.n_input, self.n_hidden, self.n_layer, self.n_output,
-            dtype=self.dtype, bidirectional=bidirectional, dropout=self.dropout)
+        # Decoder is always twice deep the encoder because of bi-uni nature of enc-dec
+        self.decoder = RNNStrokeDecoder(self.n_input, self.n_hidden, self.n_layer * 2, self.n_output,
+            dtype=self.dtype, bidirectional=False, dropout=self.dropout)
 
     def forward(self, x, x_, h_initial):
         latent = self.encoder(x, h_initial)
         if self.ip_free_decoding:
             x_, l = pad_packed_sequence(x_)
             x_ = torch.zeros_like(x_) # Input free decoder
+            if self.bezier_degree != 0:
+                # Bezier curve should have output sequence
+                # length always equal to 'self.bezier_degree'
+                x_ = x_[:self.bezier_degree + 1,:,:]
+                l = torch.ones_like(l) * (self.bezier_degree + 1)
             x_ = pack_padded_sequence(x_, l, enforce_sorted=False)
         out, P = self.decoder(x_, latent)
         return out, P
 
 class StrokeMSELoss(nn.Module):
-    def __init__(self, min_stroke_len=2):
+    def __init__(self, min_stroke_len=2, bezier_degree=0):
         super().__init__()
 
         # Track the parameters
         self.min_stroke_len = min_stroke_len
+        self.bezier_degree = bezier_degree
 
         # standard MSELoss
         self.mseloss = nn.MSELoss()
+        if self.bezier_degree != 0:
+            self.bezierloss = BezierLoss(self.bezier_degree)
+            # The fixed 'pen-up' prob ground-truth for bezier case
+            # i.e., [0., 0., 0., .. , 1.] with no. of elements
+            # equal to (self.bezier_degree + 1)
+            self.bezier_p = torch.zeros((self.bezier_degree + 1))
+            self.bezier_p[-1] = 1.
+            if torch.cuda.is_available():
+                self.bezier_p = self.bezier_p.cuda()
 
     def forward(self, out_xy, out_p, xy, p, lens):
         loss = []
@@ -95,8 +114,12 @@ class StrokeMSELoss(nn.Module):
         for y_, p_, y, p, l in zip(out_xy, out_p, xy, p, lens):
             if l >= 2:
                 y, p = y[:l.item(),:], p[:l.item()]
-                loss.append( self.mseloss(y, y_) )
-                loss.append( self.mseloss(p, p_.squeeze()) )
+                if self.bezier_degree != 0:
+                    loss.append( self.bezierloss(y_, y) )
+                    # loss.append( self.mseloss(p_, self.bezier_p) )
+                else:
+                    loss.append( self.mseloss(y, y_) )
+                    loss.append( self.mseloss(p, p_.squeeze()) )
 
         return sum(loss) / len(loss)
 

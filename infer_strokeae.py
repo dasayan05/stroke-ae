@@ -5,13 +5,14 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 from quickdraw.quickdraw import QuickDraw
 from strokeae import RNNStrokeAE
+from beziercurve import draw_bezier
 
 def main( args ):
     qds = QuickDraw(args.root, categories=['face', 'airplane'], max_sketches_each_cat=2, mode=QuickDraw.STROKE,
         start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(1)
 
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec)
+    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec, bezier_degree=args.bezier_degree)
     model = model.float()
     if torch.cuda.is_available():
         model = model.cuda()
@@ -54,6 +55,8 @@ def main( args ):
                 while not stop:
                     (y, p), s = model.decoder(px, h_init, return_state=True)
                     curve = np.vstack((curve, y[0].detach().cpu().numpy()))
+                    if curve.shape[0] >= (args.bezier_degree + 1):
+                        break
                     if not args.ip_free_dec:
                         px = pack_padded_sequence(y[0].unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
                     h_init = s
@@ -62,7 +65,10 @@ def main( args ):
 
             fig, ax = plt.subplots(1, 2)
             ax[0].plot(X_numpy[:,0], X_numpy[:,1])
-            ax[1].plot(curve[:,0], curve[:,1])
+            if args.bezier_degree != 0:
+                draw_bezier(curve, annotate=False, draw_axis=ax[1])
+            else:
+                ax[1].plot(curve[:,0], curve[:,1])
             plt.savefig(str(i) + '.png')
             plt.close()
 
@@ -76,6 +82,7 @@ if __name__ == '__main__':
     parser.add_argument('--layers', type=int, required=False, default=2, help='no of layers in RNN')
     parser.add_argument('--bidirec', action='store_true', help='Want the RNN to be bidirectional?')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
+    parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=0, help='degree of the bezier')
     args = parser.parse_args()
 
     main( args )
