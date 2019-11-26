@@ -20,7 +20,7 @@ def main( args ):
     if os.path.exists(args.modelname + '.pth'):
         model.load_state_dict(torch.load(args.modelname + '.pth'))
     else:
-        print('Model file not found, using random weights instead !')
+        raise 'Model file not found !'
     
     model.eval()
     
