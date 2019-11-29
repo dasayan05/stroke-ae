@@ -59,7 +59,11 @@ def main( args ):
                 X, X_, Y, P = X.cuda(), X_.cuda(), Y.cuda(), P.cuda()
                 h_initial = h_initial.cuda()
             
-            for _ in range(args.k_loptim):
+            # Reduce K from 'args.k_loptim' to 1 step-by-step
+            # after every (args.epochs // args.k_loptim) epochs
+            K = args.k_loptim - (e // (args.epochs // args.k_loptim))
+
+            for _ in range(K):
                 out, p = model(X, X_, h_initial)
                 loss = strokemse(out, p, Y, P, L)
 
