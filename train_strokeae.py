@@ -20,7 +20,6 @@ def main( args ):
         model = model.cuda()
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr)
-    strokemse = StrokeMSELoss(bezier_degree=args.bezier_degree)
 
     curloss = np.inf
 
@@ -29,35 +28,48 @@ def main( args ):
     count = 0
     for e in range(args.epochs):
 
-        model.eval()
-        avg_loss, c = 0., 0
-        for i, (X, (X_, Y, P), _) in enumerate(qdl_test):
-            (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
-
-            h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
-            if torch.cuda.is_available():
-                X, X_, Y, P = X.cuda(), X_.cuda(), Y.cuda(), P.cuda()
-                h_initial = h_initial.cuda()
+        # model.eval()
+        # avg_loss, c = 0., 0
+        # for i, (X, (X_, Y, P), _) in enumerate(qdl_test):
+        #     (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
+        #     strokemse = StrokeMSELoss(L.tolist(), bezier_degree=args.bezier_degree)
             
-            out, p = model(X, X_, h_initial)
+        #     # breakpoint()
+        #     h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
+        #     if torch.cuda.is_available():
+        #         X, X_, Y, P = X.cuda(), X_.cuda(), Y.cuda(), P.cuda()
+        #         h_initial = h_initial.cuda()
+            
+        #     out, p = model(X, X_, h_initial)
 
-            loss = strokemse(out, p, Y, P, L)
-            avg_loss = ((avg_loss * c) + loss.item()) / (c + 1)
-            c += 1
-        print(f'[Testing: -/{e}/{args.epochs}] -> Loss: {avg_loss}')
-        writer.add_scalar('test_loss', avg_loss, global_step=count)
+        #     loss = strokemse(out, p, Y, P, L)
+        #     avg_loss = ((avg_loss * c) + loss.item()) / (c + 1)
+        #     c += 1
+        # print(f'[Testing: -/{e}/{args.epochs}] -> Loss: {avg_loss}')
+        # writer.add_scalar('test_loss', avg_loss, global_step=count)
 
         model.train()
         for i, (X, (X_, Y, P), _) in enumerate(qdl_train):
             (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
+            strokemse = StrokeMSELoss(L.tolist(), bezier_degree=args.bezier_degree)
+            l_optim = torch.optim.Adam(strokemse.parameters(), lr=args.lr)
 
             h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
                 X, X_, Y, P = X.cuda(), X_.cuda(), Y.cuda(), P.cuda()
                 h_initial = h_initial.cuda()
             
-            out, p = model(X, X_, h_initial)
-            loss = strokemse(out, p, Y, P, L)
+            for _ in range(args.k_loptim):
+                out, p = model(X, X_, h_initial)
+                loss = strokemse(out, p, Y, P, L)
+
+                optim.zero_grad()
+                l_optim.zero_grad()
+
+                loss.backward()
+                
+                optim.step()
+                l_optim.step()
             
             if i % args.interval == 0:
                 count += 1
@@ -72,12 +84,6 @@ def main( args ):
                 print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {loss}{saved_string}')
                 
                 writer.add_scalar('train_loss', loss.item(), global_step=count)
-
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
-
-
 
 if __name__ == '__main__':
     import argparse
@@ -96,6 +102,7 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')
     parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=0, help='degree of the bezier')
+    parser.add_argument('-k', '--k_loptim', type=int, required=False, default=2, help='k times optimize the local optimizer')
     args = parser.parse_args()
 
     main( args )

@@ -89,17 +89,19 @@ class RNNStrokeAE(nn.Module):
         return out, P
 
 class StrokeMSELoss(nn.Module):
-    def __init__(self, min_stroke_len=2, bezier_degree=0):
+    def __init__(self, XY_lens, min_stroke_len=2, bezier_degree=0):
         super().__init__()
 
         # Track the parameters
         self.min_stroke_len = min_stroke_len
         self.bezier_degree = bezier_degree
+        self.XY_lens = XY_lens
 
         # standard MSELoss
         self.mseloss = nn.MSELoss()
         if self.bezier_degree != 0:
-            self.bezierloss = BezierLoss(self.bezier_degree)
+            for q, xylen in enumerate(self.XY_lens):
+                setattr(self, f'bezierloss_{q}', BezierLoss(self.bezier_degree, n_xy=xylen))
             # The fixed 'pen-up' prob ground-truth for bezier case
             # i.e., [0., 0., 0., .. , 1.] with no. of elements
             # equal to (self.bezier_degree + 1)
@@ -111,11 +113,12 @@ class StrokeMSELoss(nn.Module):
     def forward(self, out_xy, out_p, xy, p, lens):
         loss = []
 
-        for y_, p_, y, p, l in zip(out_xy, out_p, xy, p, lens):
+        for q, (y_, p_, y, p, l) in enumerate(zip(out_xy, out_p, xy, p, lens)):
             if l >= 2:
                 y, p = y[:l.item(),:], p[:l.item()]
                 if self.bezier_degree != 0:
-                    loss.append( self.bezierloss(y_, y) )
+                    bezierloss_x = getattr(self, f'bezierloss_{q}')
+                    loss.append( bezierloss_x(y_, y) )
                     # loss.append( self.mseloss(p_, self.bezier_p) )
                 else:
                     loss.append( self.mseloss(y, y_) )
