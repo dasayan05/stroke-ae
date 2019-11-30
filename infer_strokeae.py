@@ -12,7 +12,8 @@ def main( args ):
         start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(1)
 
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec, bezier_degree=args.bezier_degree)
+    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec,
+        bezier_degree=args.bezier_degree, variational=args.vae)
     model = model.float()
     if torch.cuda.is_available():
         model = model.cuda()
@@ -60,12 +61,13 @@ def main( args ):
                     if not args.ip_free_dec:
                         px = pack_padded_sequence(y[0].unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
                     h_init = s
-                    print(p[0].item())
+                    # print(p[0].item())
                     stop = True if p[0].item() > 0.75 else False
 
             fig, ax = plt.subplots(1, 2)
             ax[0].plot(X_numpy[:,0], X_numpy[:,1])
             if args.bezier_degree != 0:
+                print(curve)
                 draw_bezier(curve, annotate=False, draw_axis=ax[1])
             else:
                 ax[1].plot(curve[:,0], curve[:,1])
@@ -83,6 +85,7 @@ if __name__ == '__main__':
     parser.add_argument('--bidirec', action='store_true', help='Want the RNN to be bidirectional?')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=0, help='degree of the bezier')
+    parser.add_argument('-V', '--vae', action='store_true', help='Impose prior on latent space')
     args = parser.parse_args()
 
     main( args )

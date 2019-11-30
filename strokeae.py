@@ -19,7 +19,8 @@ class RNNStrokeEncoder(nn.Module):
 
     def forward(self, x, h_initial):
         _, h_final = self.cell(x, h_initial)
-        return h_final
+        H = torch.cat([h_final[0], h_final[1]], dim=1)
+        return H
 
 class RNNStrokeDecoder(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, n_output, dtype=torch.float32, bidirectional=True, dropout=0.5):
@@ -39,9 +40,11 @@ class RNNStrokeDecoder(nn.Module):
         self.p = torch.nn.Linear(self.n_hidden * self.bidirectional, 1)
 
     def forward(self, x, h_initial, return_state=False):
+        H_f, H_b = torch.split(h_initial, [self.n_hidden, self.n_hidden], dim=1)
+        h_initial = torch.stack([H_f, H_b], dim=0)
+
         out, state = self.cell(x, h_initial)
         hns, lengths = pad_packed_sequence(out, batch_first=True)
-        # pdb.set_trace()
         
         out, P = [], []
         for hn, l in zip(hns, lengths):
@@ -52,11 +55,12 @@ class RNNStrokeDecoder(nn.Module):
         if not return_state:
             return out, P
         else:
+            state = torch.cat([state[0], state[1]], dim=1)
             return (out, P), state
 
 class RNNStrokeAE(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, n_output, dtype=torch.float32, bidirectional=True,
-                ip_free_decoding=False, bezier_degree=0, dropout=0.5):
+                ip_free_decoding=False, bezier_degree=0, dropout=0.5, variational=False):
         super().__init__()
 
         # Track parameters
@@ -67,6 +71,7 @@ class RNNStrokeAE(nn.Module):
         self.dropout = dropout
         self.ip_free_decoding = ip_free_decoding
         self.bezier_degree = bezier_degree
+        self.variational = variational
 
         self.encoder = RNNStrokeEncoder(self.n_input, self.n_hidden, self.n_layer,
             dtype=self.dtype, bidirectional=bidirectional, dropout=self.dropout)
@@ -74,8 +79,27 @@ class RNNStrokeAE(nn.Module):
         self.decoder = RNNStrokeDecoder(self.n_input, self.n_hidden, self.n_layer * 2, self.n_output,
             dtype=self.dtype, bidirectional=False, dropout=self.dropout)
 
+        if self.variational:
+            # VAE stuff
+            self.mu = nn.Linear(self.n_hidden * 2, self.n_hidden * 2)
+            self.logvar = nn.Linear(self.n_hidden * 2, self.n_hidden * 2)
+
+    def reparam(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return (mu + eps * std)
+
     def forward(self, x, x_, h_initial):
         latent = self.encoder(x, h_initial)
+        
+        if self.variational:
+            # VAE stuff
+            mu = self.mu(latent)
+            logvar = self.logvar(latent)
+            latent = self.reparam(mu, logvar)
+
+            KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+
         if self.ip_free_decoding:
             x_, l = pad_packed_sequence(x_)
             x_ = torch.zeros_like(x_) # Input free decoder
@@ -86,7 +110,11 @@ class RNNStrokeAE(nn.Module):
                 l = torch.ones_like(l) * (self.bezier_degree + 1)
             x_ = pack_padded_sequence(x_, l, enforce_sorted=False)
         out, P = self.decoder(x_, latent)
-        return out, P
+
+        if self.variational:
+            return (out, P), KLD
+        else:
+            return out, P
 
 class StrokeMSELoss(nn.Module):
     def __init__(self, XY_lens, min_stroke_len=2, bezier_degree=0):

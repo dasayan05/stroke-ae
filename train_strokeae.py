@@ -14,7 +14,8 @@ def main( args ):
     qdl_train = qds_train.get_dataloader(args.batch_size)
     qdl_test = qds_test.get_dataloader(args.batch_size)
 
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec, bezier_degree=args.bezier_degree)
+    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec,
+        bezier_degree=args.bezier_degree, variational=args.vae)
     model = model.float()
     if torch.cuda.is_available():
         model = model.cuda()
@@ -28,26 +29,6 @@ def main( args ):
     count = 0
     for e in range(args.epochs):
 
-        # model.eval()
-        # avg_loss, c = 0., 0
-        # for i, (X, (X_, Y, P), _) in enumerate(qdl_test):
-        #     (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
-        #     strokemse = StrokeMSELoss(L.tolist(), bezier_degree=args.bezier_degree)
-            
-        #     # breakpoint()
-        #     h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
-        #     if torch.cuda.is_available():
-        #         X, X_, Y, P = X.cuda(), X_.cuda(), Y.cuda(), P.cuda()
-        #         h_initial = h_initial.cuda()
-            
-        #     out, p = model(X, X_, h_initial)
-
-        #     loss = strokemse(out, p, Y, P, L)
-        #     avg_loss = ((avg_loss * c) + loss.item()) / (c + 1)
-        #     c += 1
-        # print(f'[Testing: -/{e}/{args.epochs}] -> Loss: {avg_loss}')
-        # writer.add_scalar('test_loss', avg_loss, global_step=count)
-
         model.train()
         for i, (X, (X_, Y, P), _) in enumerate(qdl_train):
             (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
@@ -59,13 +40,29 @@ def main( args ):
                 X, X_, Y, P = X.cuda(), X_.cuda(), Y.cuda(), P.cuda()
                 h_initial = h_initial.cuda()
             
-            # Reduce K from 'args.k_loptim' to 1 step-by-step
-            # after every (args.epochs // args.k_loptim) epochs
-            K = args.k_loptim - (e // (args.epochs // args.k_loptim))
+            if args.anneal_k:
+                # Reduce K from 'args.k_loptim' to 1 step-by-step
+                # after every (args.epochs // args.k_loptim) epochs
+                K = args.k_loptim - (e // (args.epochs // args.k_loptim))
+            else:
+                K = args.k_loptim
+
+            if args.anneal_KLD:
+                # Annealing factor for KLD term
+                anneal_factor = 1. - np.exp(- (e + 1) / (args.max_KLD_epoch / 4.6))
+            else:
+                anneal_factor = 1.
 
             for _ in range(K):
-                out, p = model(X, X_, h_initial)
-                loss = strokemse(out, p, Y, P, L)
+                if args.vae:
+                    (out, p), KLD = model(X, X_, h_initial)
+                else:
+                    out, p = model(X, X_, h_initial)
+
+                KLD_loss = (KLD * anneal_factor if args.vae else 0)
+                REC_loss = strokemse(out, p, Y, P, L)
+
+                loss = REC_loss + KLD_loss
 
                 optim.zero_grad()
                 l_optim.zero_grad()
@@ -85,9 +82,11 @@ def main( args ):
                     saved = False
 
                 saved_string = ' (saved)' if saved else ''
-                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {loss}{saved_string}')
+                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {REC_loss:.4f} + {KLD_loss:.4f}{saved_string}')
                 
-                writer.add_scalar('train_loss', loss.item(), global_step=count)
+                writer.add_scalar('loss/total', loss.item(), global_step=count)
+                writer.add_scalar('loss/recon', REC_loss.item(), global_step=count)
+                writer.add_scalar('loss/KLD', KLD_loss.item(), global_step=count)
 
 if __name__ == '__main__':
     import argparse
@@ -106,7 +105,11 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')
     parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=0, help='degree of the bezier')
-    parser.add_argument('-k', '--k_loptim', type=int, required=False, default=2, help='k times optimize the local optimizer')
+    parser.add_argument('-k', '--k_loptim', type=int, required=False, default=4, help='k times optimize the local optimizer')
+    parser.add_argument('--anneal_k', action='store_true', help='Decrease K gradually')
+    parser.add_argument('-V', '--vae', action='store_true', help='Impose prior on latent space')
+    parser.add_argument('--anneal_KLD', action='store_true', help='Increase annealing factor of KLD gradually')
+    parser.add_argument('--max_KLD_epoch', type=int, required=False, default=5000, help='Saturate KLD anneal_factor to 1 at this epoch')
     args = parser.parse_args()
 
     main( args )
