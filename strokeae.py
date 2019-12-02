@@ -5,7 +5,7 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from bezierloss import BezierLoss
 
 class RNNStrokeEncoder(nn.Module):
-    def __init__(self, n_input, n_hidden, n_layer, dtype=torch.float32, bidirectional=True, dropout=0.5):
+    def __init__(self, n_input, n_hidden, n_layer, n_latent, dtype=torch.float32, bidirectional=True, dropout=0.5, variational=True):
         super().__init__()
 
         # Track parameters
@@ -14,24 +14,51 @@ class RNNStrokeEncoder(nn.Module):
         self.dtype = dtype
         self.bidirectional = 2 if bidirectional else 1
         self.dropout = dropout
+        self.variational = variational
+        self.n_latent = n_latent
 
         self.cell = nn.GRU(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=self.dropout)
 
-    def forward(self, x, h_initial):
+        # The latent vector producer
+        self.latent = nn.Linear(2 * self.n_hidden, self.n_latent)
+
+        if self.variational:
+            self.logvar = nn.Linear(2 * self.n_hidden, self.n_latent)
+
+    def reparam(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return (mu + eps * std)
+
+    def forward(self, x, h_initial, KLD_anneal = 1):
+        # breakpoint()
         _, h_final = self.cell(x, h_initial)
         H = torch.cat([h_final[0], h_final[1]], dim=1)
-        return H
+        if not self.variational:
+            return self.latent(H)
+        else:
+            mu = self.latent(H)
+            logvar = self.logvar(H) * KLD_anneal
+
+            # KL divergence term of the loss
+            KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+
+            if self.training:
+                return self.reparam(mu, logvar), KLD
+            else:
+                return mu
 
 class RNNStrokeDecoder(nn.Module):
-    def __init__(self, n_input, n_hidden, n_layer, n_output, dtype=torch.float32, bidirectional=True, dropout=0.5):
+    def __init__(self, n_input, n_layer, n_output, n_latent, dtype=torch.float32, bidirectional=True, dropout=0.5):
         super().__init__()
 
         # Track parameters
-        self.n_input, self.n_hidden, self.n_output = n_input, n_hidden, n_output
+        self.n_input, self.n_hidden, self.n_output = n_input, n_latent // 2, n_output
         self.n_layer = n_layer
         self.dtype = dtype
         self.bidirectional = 2 if bidirectional else 1
         self.dropout = dropout
+        self.n_latent = n_latent
 
         self.cell = nn.GRU(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=dropout)
 
@@ -59,7 +86,7 @@ class RNNStrokeDecoder(nn.Module):
             return (out, P), state
 
 class RNNStrokeAE(nn.Module):
-    def __init__(self, n_input, n_hidden, n_layer, n_output, dtype=torch.float32, bidirectional=True,
+    def __init__(self, n_input, n_hidden, n_layer, n_output, n_latent, dtype=torch.float32, bidirectional=True,
                 ip_free_decoding=False, bezier_degree=0, dropout=0.5, variational=False):
         super().__init__()
 
@@ -72,33 +99,23 @@ class RNNStrokeAE(nn.Module):
         self.ip_free_decoding = ip_free_decoding
         self.bezier_degree = bezier_degree
         self.variational = variational
+        self.n_latent = n_latent
 
-        self.encoder = RNNStrokeEncoder(self.n_input, self.n_hidden, self.n_layer,
+        self.encoder = RNNStrokeEncoder(self.n_input, self.n_hidden, self.n_layer, self.n_latent, variational=self.variational,
             dtype=self.dtype, bidirectional=bidirectional, dropout=self.dropout)
         # Decoder is always twice deep the encoder because of bi-uni nature of enc-dec
-        self.decoder = RNNStrokeDecoder(self.n_input, self.n_hidden, self.n_layer * 2, self.n_output,
+        self.decoder = RNNStrokeDecoder(self.n_input, self.n_layer * 2, self.n_output, self.n_latent,
             dtype=self.dtype, bidirectional=False, dropout=self.dropout)
 
-        if self.variational:
-            # VAE stuff
-            self.mu = nn.Linear(self.n_hidden * 2, self.n_hidden * 2)
-            self.logvar = nn.Linear(self.n_hidden * 2, self.n_hidden * 2)
 
-    def reparam(self, mu, logvar):
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return (mu + eps * std)
-
-    def forward(self, x, x_, h_initial):
-        latent = self.encoder(x, h_initial)
-        
-        if self.variational:
-            # VAE stuff
-            mu = self.mu(latent)
-            logvar = self.logvar(latent)
-            latent = self.reparam(mu, logvar)
-
-            KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+    def forward(self, x, x_, h_initial, KLD_anneal = 1.):
+        if not self.variational:
+            latent = self.encoder(x, h_initial)
+        else:
+            if self.training:
+                latent, KLD = self.encoder(x, h_initial, KLD_anneal=KLD_anneal)
+            else:
+                latent = self.encoder(x, h_initial)
 
         if self.ip_free_decoding:
             x_, l = pad_packed_sequence(x_)
@@ -112,12 +129,15 @@ class RNNStrokeAE(nn.Module):
         out, P = self.decoder(x_, latent)
 
         if self.variational:
-            return (out, P), KLD
+            if self.training:
+                return (out, P), KLD
+            else:
+                return out, P
         else:
             return out, P
 
 class StrokeMSELoss(nn.Module):
-    def __init__(self, XY_lens, min_stroke_len=2, bezier_degree=0):
+    def __init__(self, XY_lens, min_stroke_len=2, bezier_degree=0, bez_reg_weight=1e-2):
         super().__init__()
 
         # Track the parameters
@@ -129,7 +149,7 @@ class StrokeMSELoss(nn.Module):
         self.mseloss = nn.MSELoss()
         if self.bezier_degree != 0:
             for q, xylen in enumerate(self.XY_lens):
-                setattr(self, f'bezierloss_{q}', BezierLoss(self.bezier_degree, n_xy=xylen))
+                setattr(self, f'bezierloss_{q}', BezierLoss(self.bezier_degree, n_xy=xylen, reg_weight=bez_reg_weight))
             # The fixed 'pen-up' prob ground-truth for bezier case
             # i.e., [0., 0., 0., .. , 1.] with no. of elements
             # equal to (self.bezier_degree + 1)

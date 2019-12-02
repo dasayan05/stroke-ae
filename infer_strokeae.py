@@ -12,13 +12,14 @@ def main( args ):
         start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(1)
 
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, bidirectional=args.bidirec, ip_free_decoding=args.ip_free_dec,
+    model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True, ip_free_decoding=True,
         bezier_degree=args.bezier_degree, variational=args.vae)
+    
     model = model.float()
     if torch.cuda.is_available():
         model = model.cuda()
 
-    print(args.modelname)
+    # print(args.modelname)
     if os.path.exists(args.modelname + '.pth'):
         model.load_state_dict(torch.load(args.modelname + '.pth'))
     else:
@@ -28,7 +29,7 @@ def main( args ):
     
     with torch.no_grad():
         for i, (X, (_, _, _), _) in enumerate(qdl):
-            h_initial = torch.zeros(args.layers * (2 if args.bidirec else 1), X.batch_sizes.max(), args.hidden, dtype=torch.float32)
+            h_initial = torch.zeros(args.layers * 2, 1, args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
                 X, h_initial = X.cuda(), h_initial.cuda()
 
@@ -79,10 +80,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--root', type=str, required=True, help='quickdraw binary file')
-    parser.add_argument('--ip_free_dec', action='store_true', help='Decoder inputs are zero')
     parser.add_argument('--hidden', type=int, required=False, default=128, help='no. of hidden neurons')
+    parser.add_argument('-l', '--latent', type=int, required=False, default=32, help='size of latent vector')
+    parser.add_argument('--ip_free_dec', action='store_true', help='Decoder inputs are zero')
     parser.add_argument('--layers', type=int, required=False, default=2, help='no of layers in RNN')
-    parser.add_argument('--bidirec', action='store_true', help='Want the RNN to be bidirectional?')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=0, help='degree of the bezier')
     parser.add_argument('-V', '--vae', action='store_true', help='Impose prior on latent space')
