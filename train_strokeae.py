@@ -7,7 +7,7 @@ from quickdraw.quickdraw import QuickDraw
 from strokeae import RNNStrokeAE, StrokeMSELoss
 
 def main( args ):
-    qds = QuickDraw(args.root, max_sketches_each_cat=200, mode=QuickDraw.STROKE, start_from_zero=True,
+    qds = QuickDraw(args.root, max_sketches_each_cat=250, mode=QuickDraw.STROKE, start_from_zero=True,
         verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
 

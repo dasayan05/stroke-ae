@@ -20,8 +20,8 @@ def main( args ):
         model = model.cuda()
 
     # print(args.modelname)
-    if os.path.exists(args.modelname + '.pth'):
-        model.load_state_dict(torch.load(args.modelname + '.pth'))
+    if os.path.exists(args.modelname):
+        model.load_state_dict(torch.load(args.modelname))
     else:
         raise 'Model file not found !'
     
@@ -62,8 +62,8 @@ def main( args ):
                     if not args.ip_free_dec:
                         px = pack_padded_sequence(y[0].unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
                     h_init = s
-                    # print(p[0].item())
-                    stop = True if p[0].item() > 0.75 else False
+                    if args.bezier_degree == 0:
+                        stop = True if p[0].item() > 0.75 else False
 
             fig, ax = plt.subplots(1, 2)
             ax[0].plot(X_numpy[:,0], X_numpy[:,1])
