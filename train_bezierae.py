@@ -33,48 +33,6 @@ def main( args ):
     count = 0
     for e in range(args.epochs):
 
-        model.eval()
-        avg_test_loss, c = 0., 0
-        for i, (X, (_, _, _), _) in enumerate(qdl_test):
-            h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
-            if torch.cuda.is_available():
-                X, h_initial = X.cuda(), h_initial.cuda()
-
-            # Unpacking the X, nothing more
-            X_, L_ = pad_packed_sequence(X, batch_first=True)
-            
-            if args.anneal_KLD:
-                # Annealing factor for KLD term
-                linear = lambda e, e0: min(e / float(e0), 1.)
-                anneal_factor = linear(e, 15)
-            else:
-                anneal_factor = 1.
-
-            if args.variational:
-                out, KLD = model(X, h_initial)
-            else:
-                out = model(X, h_initial)
-
-            batch_losses = []
-            for o, x_, l_ in zip(out, X_, L_):
-                # per sample iteration
-                batch_losses.append( mseloss(o[:l_, :], x_[:l_, :]) )
-            
-            if args.variational:
-                KLD_loss = KLD * args.latent * anneal_factor
-                REC_loss = sum(batch_losses) / len(batch_losses) * (2 * args.hidden)
-            else:
-                REC_loss = sum(batch_losses) / len(batch_losses)
-                KLD_loss = torch.tensor(0.)
-
-            loss = REC_loss + KLD_loss
-            avg_test_loss = ((avg_test_loss * c) + loss.item()) / (c + 1)
-            c += 1
-
-        # report test performance
-        print(f'[Testing: -/{e}/{args.epochs}] -> Loss: {avg_test_loss:.4f}')
-        writer.add_scalar('test/loss/total', avg_test_loss, global_step=count)
-
         model.train()
         for i, (X, (_, _, _), _) in enumerate(qdl_train):
             h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
