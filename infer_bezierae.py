@@ -1,44 +1,24 @@
-import os
+import os, random
 import torch, numpy as np
 import matplotlib.pyplot as plt
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 from quickdraw.quickdraw import QuickDraw
-from strokeae import RNNStrokeAE
-from beziercurve import draw_bezier
-
-def decode_stroke(decoder, latent, dtype=torch.float32):
-    curve = np.empty((0, 2))
-    x_init = torch.tensor([[0., 0.]], dtype=dtype)
-    px = pack_padded_sequence(x_init.unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
-    
-    if torch.cuda.is_available():
-        px = px.cuda()
-    
-    with torch.no_grad():
-        while True:
-            (y, _), s = decoder(px, latent, return_state=True)
-            curve = np.vstack((curve, y[0].detach().cpu().numpy()))
-            if curve.shape[0] >= (args.bezier_degree + 1):
-                break
-            px = pack_padded_sequence(y[0].unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
-            latent = s
-
-    return curve
+from strokeae import RNNBezierAE
 
 def main( args ):
-    qds = QuickDraw(args.root, categories=['face', 'airplane'], max_sketches_each_cat=2, mode=QuickDraw.STROKE,
+    chosen_classes = [q.split('.')[0] for q in os.listdir(args.root)]
+    random.shuffle(chosen_classes)
+    qds = QuickDraw(args.root, categories=chosen_classes[:2], max_sketches_each_cat=2, mode=QuickDraw.STROKE,
         start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(1)
 
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True, ip_free_decoding=True,
-        bezier_degree=args.bezier_degree, variational=args.variational)
+    model = RNNBezierAE(2, args.hidden, args.layers, args.latent, bidirectional=True, variational=args.variational)
     
     model = model.float()
     if torch.cuda.is_available():
         model = model.cuda()
 
-    # print(args.modelname)
     if os.path.exists(args.modelname):
         model.load_state_dict(torch.load(args.modelname))
     else:
@@ -52,7 +32,7 @@ def main( args ):
         for i, (X, (_, _, _), _) in enumerate(qdl):
             if i >= args.nsamples:
                 break
-
+            
             h_initial = torch.zeros(args.layers * 2, 1, args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
                 X, h_initial = X.cuda(), h_initial.cuda()
@@ -71,20 +51,24 @@ def main( args ):
                 mu, sigma = model.encoder(X, h_initial)
                 normal = torch.distributions.Normal(mu.squeeze(), sigma.squeeze())
 
+            t = torch.arange(0.0, 1.0 + args.granularity, args.granularity).unsqueeze(0).unsqueeze(-1)
+            if torch.cuda.is_available():
+                t = t.cuda()
+
             ax[i, 0].scatter(X_numpy[:, 0], X_numpy[:,1])
             ax[i, 0].plot(X_numpy[:,0], X_numpy[:,1])
 
             for s in range(1 if not args.variational else args.rsamples):
                 latent = normal.sample().unsqueeze(0)
-                curve = decode_stroke(model.decoder, latent)
+                out = model.decoder(t, latent)
+                out = out.squeeze().cpu().numpy()
 
-                if args.bezier_degree != 0:
-                    draw_bezier(curve, annotate=False, draw_axis=ax[i, s + 1])
-                else:
-                    ax[i, s + 1].plot(curve[:,0], curve[:,1])
-            
+                ax[i, s + 1].scatter(out[:, 0], out[:,1])
+                ax[i, s + 1].plot(out[:,0], out[:,1])
+                ax[i, s + 1].get_xaxis().set_visible(False)
+                ax[i, s + 1].get_yaxis().set_visible(False)
+
         plt.savefig(args.savefile)
-        plt.xticks([]); plt.yticks([])
         plt.close()
 
 if __name__ == '__main__':
@@ -96,8 +80,8 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--latent', type=int, required=False, default=32, help='size of latent vector')
     parser.add_argument('--layers', type=int, required=False, default=2, help='no of layers in RNN')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
-    parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=0, help='degree of the bezier')
     parser.add_argument('-V', '--variational', action='store_true', help='Impose prior on latent space')
+    parser.add_argument('-g', '--granularity', type=float, required=False, default=1./20., help='granularity of the curve')
     parser.add_argument('-n', '--nsamples', type=int, required=False, default=5, help='no. of data samples')
     parser.add_argument('-s', '--rsamples', type=int, required=False, default=4, help='no. of samples drawn from p(z|x); only if VAE')
     parser.add_argument('--savefile', type=str, required=True, help='saved filename')

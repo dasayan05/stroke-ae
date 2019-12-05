@@ -217,12 +217,16 @@ class RNNBezierDecoder(nn.Module):
         return torch.cumsum(torch.softmax(t.squeeze(), 1), 1).unsqueeze(-1)
 
     def forward(self, x, h_initial):
-        out, _ = self.cell(x, h_initial.unsqueeze(0))
-        out, l = pad_packed_sequence(out, batch_first=True)
-        t = self.t_logits(out)
-        t = self.constraint_t(t)
+        if self.training:
+            out, _ = self.cell(x, h_initial.unsqueeze(0))
+            out, l = pad_packed_sequence(out, batch_first=True)
+            t = self.t_logits(out)
+            t = self.constraint_t(t)
+            breakpoint()
+        else:
+            t = x
         t_enc = self.t_enc(t)
-        h_context = h_initial.unsqueeze(1).repeat(1, l.max(), 1)
+        h_context = h_initial.unsqueeze(1).repeat(1, t.shape[1], 1)
         t_enc_h_context = torch.cat([t_enc, h_context], -1)
         out = self.C(t_enc_h_context)
         return out

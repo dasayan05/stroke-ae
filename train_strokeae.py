@@ -1,4 +1,4 @@
-import sys, os
+import sys, os, random
 import torch, numpy as np
 import torch.utils.tensorboard as tb
 from torch.nn.utils.rnn import pad_packed_sequence
@@ -7,7 +7,9 @@ from quickdraw.quickdraw import QuickDraw
 from strokeae import RNNStrokeAE, StrokeMSELoss
 
 def main( args ):
-    qds = QuickDraw(args.root, max_sketches_each_cat=250, mode=QuickDraw.STROKE, start_from_zero=True,
+    chosen_classes = [q.split('.')[0] for q in os.listdir(args.root)]
+    random.shuffle(chosen_classes)
+    qds = QuickDraw(args.root, categories=chosen_classes, max_sketches_each_cat=500, mode=QuickDraw.STROKE, start_from_zero=True,
         verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
 
@@ -55,8 +57,11 @@ def main( args ):
                 else:
                     out, p = model(X, X_, h_initial)
 
-                KLD_loss = (KLD * args.latent * anneal_factor if args.variational else torch.tensor(0.))
-                REC_loss = strokemse(out, p, Y, P, L) * (2 * args.hidden)
+                REC_loss = strokemse(out, p, Y, P, L)
+                if args.variational:
+                    KLD_loss = KLD * args.latent * anneal_factor
+                else:
+                    KLD_loss = torch.tensor(0.)
 
                 loss = REC_loss + KLD_loss
 

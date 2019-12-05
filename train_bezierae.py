@@ -58,11 +58,10 @@ def main( args ):
                 # per sample iteration
                 batch_losses.append( mseloss(o[:l_, :], x_[:l_, :]) )
             
+            REC_loss = sum(batch_losses) / len(batch_losses)
             if args.variational:
                 KLD_loss = KLD * args.latent * anneal_factor
-                REC_loss = sum(batch_losses) / len(batch_losses) * (2 * args.hidden)
             else:
-                REC_loss = sum(batch_losses) / len(batch_losses)
                 KLD_loss = torch.tensor(0.)
 
             loss = REC_loss + KLD_loss
