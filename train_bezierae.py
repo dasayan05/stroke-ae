@@ -25,8 +25,6 @@ def main( args ):
     mseloss = torch.nn.MSELoss()
     optim = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    curloss = np.inf
-
     writer = tb.SummaryWriter(os.path.join(args.base, 'logs', args.tag))
 
     count = 0
@@ -72,15 +70,7 @@ def main( args ):
             
             if i % args.interval == 0:
                 count += 1
-                if loss < curloss:
-                    torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
-                    curloss = loss
-                    saved = True
-                else:
-                    saved = False
-
-                saved_string = ' (saved)' if saved else ''
-                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {loss:.6f}{saved_string}')
+                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {loss:.6f}')
                 
                 if args.variational:
                     writer.add_scalar('train/loss/REC', REC_loss.item(), global_step=count)
@@ -88,6 +78,9 @@ def main( args ):
                     writer.add_scalar('train/loss/total', loss.item(), global_step=count)
                 else:
                     writer.add_scalar('train/loss/total', loss.item(), global_step=count)
+
+        # save after every epoch
+        torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
 
 if __name__ == '__main__':
     import argparse
