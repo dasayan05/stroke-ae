@@ -9,14 +9,14 @@ from strokeae import RNNStrokeAE, StrokeMSELoss
 def main( args ):
     chosen_classes = [q.split('.')[0] for q in os.listdir(args.root)]
     random.shuffle(chosen_classes)
-    qds = QuickDraw(args.root, categories=chosen_classes, max_sketches_each_cat=500, mode=QuickDraw.STROKE, start_from_zero=True,
+    qds = QuickDraw(args.root, categories=chosen_classes, max_sketches_each_cat=250, mode=QuickDraw.STROKE, start_from_zero=True,
         verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
 
     # chosen device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True, ip_free_decoding=True,
+    model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True,
         bezier_degree=args.bezier_degree, variational=args.variational)
     
     model = model.float()
@@ -31,15 +31,15 @@ def main( args ):
     for e in range(args.epochs):
 
         model.train()
-        for i, (X, (X_, Y, P), _) in enumerate(qdl):
-            (Y, L), (P, _) = pad_packed_sequence(Y, batch_first=True), pad_packed_sequence(P, batch_first=True)
+        for i, (X, (_, _, _), _) in enumerate(qdl):
+            (Y, L) = pad_packed_sequence(X, batch_first=True)
             
             strokemse = StrokeMSELoss(L.tolist(), bezier_degree=args.bezier_degree, bez_reg_weight=1e-2)
             l_optim = torch.optim.Adam(strokemse.parameters(), lr=args.lr)
 
             h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
-                X, X_, Y, P, h_initial = X.cuda(), X_.cuda(), Y.cuda(), P.cuda(), h_initial.cuda()
+                X, Y, h_initial = X.cuda(), Y.cuda(), h_initial.cuda()
             
             if args.anneal_KLD:
                 # Annealing factor for KLD term
@@ -51,11 +51,11 @@ def main( args ):
 
             for _ in range(args.k_loptim):
                 if args.variational:
-                    (out, p), KLD = model(X, X_, h_initial)
+                    out, KLD = model(X, h_initial)
                 else:
-                    out, p = model(X, X_, h_initial)
+                    out = model(X, h_initial)
 
-                REC_loss = strokemse(out, p, Y, P, L)
+                REC_loss = strokemse(out, Y, L)
                 if args.variational:
                     KLD_loss = KLD * args.latent * anneal_factor
                 else:
@@ -79,7 +79,6 @@ def main( args ):
                 writer.add_scalar('loss/anneal_factor', anneal_factor, global_step=count)
                 writer.add_scalar('loss/KLD', KLD_loss.item(), global_step=count)
                 writer.add_scalar('loss/total', loss.item(), global_step=count)
-            break
 
         # save after every epoch
         torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
