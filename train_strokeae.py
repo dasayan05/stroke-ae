@@ -5,25 +5,30 @@ from torch.nn.utils.rnn import pad_packed_sequence
 
 from quickdraw.quickdraw import QuickDraw
 from strokeae import RNNStrokeAE, StrokeMSELoss
+from infer_strokeae import inference
 
 def main( args ):
-    chosen_classes = [q.split('.')[0] for q in os.listdir(args.root)]
-    random.shuffle(chosen_classes)
-    qds = QuickDraw(args.root, categories=chosen_classes, max_sketches_each_cat=250, mode=QuickDraw.STROKE, start_from_zero=True,
-        verbose=True, problem=QuickDraw.ENCDEC)
+    chosen_classes = [ 'cat', 'chair', 'face' , 'firetruck', 'mosquito', 'owl', 'pig', 'purse', 'shoe' ]
+
+    qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=8000, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
+    
+    qds_infer = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=2, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
+    qdl_infer = qds_infer.get_dataloader(1)
 
     # chosen device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True,
         bezier_degree=args.bezier_degree, variational=args.variational)
+    strokemse = StrokeMSELoss(args.bezier_degree, args.latent, bez_reg_weight=1e-2)
     
-    model = model.float()
+    model, strokemse = model.float(), strokemse.float()
     if torch.cuda.is_available():
         model = model.cuda()
+        strokemse = strokemse.cuda()
 
-    optim = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optim = torch.optim.Adam(list(model.parameters()) + list(strokemse.parameters()), lr=args.lr)
 
     writer = tb.SummaryWriter(os.path.join(args.base, 'logs', args.tag))
 
@@ -34,42 +39,34 @@ def main( args ):
         for i, (X, (_, _, _), _) in enumerate(qdl):
             (Y, L) = pad_packed_sequence(X, batch_first=True)
             
-            strokemse = StrokeMSELoss(L.tolist(), bezier_degree=args.bezier_degree, bez_reg_weight=1e-2)
-            l_optim = torch.optim.Adam(strokemse.parameters(), lr=args.lr)
-
             h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
-                X, Y, h_initial = X.cuda(), Y.cuda(), h_initial.cuda()
+                X, Y, L, h_initial = X.cuda(), Y.cuda(), L.cuda(), h_initial.cuda()
             
             if args.anneal_KLD:
                 # Annealing factor for KLD term
                 # sigmoid = lambda x, T: 1. / (1. + np.exp(-x / T))
                 linear = lambda e, e0: min(e / float(e0), 1.)
-                anneal_factor = linear(e, 15)
+                anneal_factor = linear(e, 20)
             else:
                 anneal_factor = 1.
 
-            for _ in range(args.k_loptim):
-                if args.variational:
-                    out, KLD = model(X, h_initial)
-                else:
-                    out = model(X, h_initial)
+            if args.variational:
+                latent, out, KLD = model(X, h_initial)
+            else:
+                latent, out = model(X, h_initial)
 
-                REC_loss = strokemse(out, Y, L)
-                if args.variational:
-                    KLD_loss = KLD * args.latent * anneal_factor
-                else:
-                    KLD_loss = torch.tensor(0.)
+            REC_loss = strokemse(out, Y, L, latent) # * (2 * args.hidden)
+            if args.variational:
+                KLD_loss = KLD * anneal_factor #* args.latent
+            else:
+                KLD_loss = torch.tensor(0.)
 
-                loss = REC_loss + KLD_loss
+            loss = REC_loss + KLD_loss
 
-                optim.zero_grad()
-                l_optim.zero_grad()
-
-                loss.backward()
-                
-                optim.step()
-                l_optim.step()
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
             
             if i % args.interval == 0:
                 count += 1
@@ -83,12 +80,18 @@ def main( args ):
         # save after every epoch
         torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
 
+        model.eval()
+        savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
+        inference(qdl_infer, model, layers=args.layers, hidden=args.hidden, variational=args.variational,
+                bezier_degree=args.bezier_degree, savefile=savefile, nsamples=6, rsamples=6)
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--root', type=str, required=True, help='quickdraw binary file')
     parser.add_argument('--base', type=str, required=False, default='.', help='base folder of operation (needed for condor)')
+    parser.add_argument('--n_classes', '-c', type=int, required=False, default=3, help='no. of classes')
 
     parser.add_argument('-V', '--variational', action='store_true', help='Impose prior on latent space')
     parser.add_argument('--hidden', type=int, required=False, default=16, help='no. of hidden neurons')
@@ -99,7 +102,6 @@ if __name__ == '__main__':
     parser.add_argument('-b','--batch_size', type=int, required=False, default=128, help='batch size')
     parser.add_argument('--lr', type=float, required=False, default=1e-4, help='learning rate')
     parser.add_argument('-e', '--epochs', type=int, required=False, default=40, help='no of epochs')
-    parser.add_argument('-k', '--k_loptim', type=int, required=False, default=4, help='k times optimize the local optimizer')
     parser.add_argument('--anneal_KLD', action='store_true', help='Increase annealing factor of KLD gradually')
     
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')

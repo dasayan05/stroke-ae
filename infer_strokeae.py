@@ -7,7 +7,7 @@ from quickdraw.quickdraw import QuickDraw
 from strokeae import RNNStrokeAE
 from beziercurve import draw_bezier
 
-def decode_stroke(decoder, latent, dtype=torch.float32):
+def decode_stroke(decoder, latent, bezier_degree, dtype=torch.float32):
     curve = np.empty((0, 2))
     x_init = torch.tensor([[0., 0.]], dtype=dtype)
     px = pack_padded_sequence(x_init.unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
@@ -17,43 +17,24 @@ def decode_stroke(decoder, latent, dtype=torch.float32):
     
     with torch.no_grad():
         while True:
-            (y, _), s = decoder(px, latent, return_state=True)
+            y, s = decoder(px, latent, return_state=True)
             curve = np.vstack((curve, y[0].detach().cpu().numpy()))
-            if curve.shape[0] >= (args.bezier_degree + 1):
+            if curve.shape[0] >= (bezier_degree + 1):
                 break
             px = pack_padded_sequence(y[0].unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
             latent = s
 
     return curve
 
-def main( args ):
-    qds = QuickDraw(args.root, categories=['face', 'airplane'], max_sketches_each_cat=2, mode=QuickDraw.STROKE,
-        start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
-    qdl = qds.get_dataloader(1)
-
-    model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True, ip_free_decoding=True,
-        bezier_degree=args.bezier_degree, variational=args.variational)
-    
-    model = model.float()
-    if torch.cuda.is_available():
-        model = model.cuda()
-
-    # print(args.modelname)
-    if os.path.exists(args.modelname):
-        model.load_state_dict(torch.load(args.modelname))
-    else:
-        raise 'Model file not found !'
-    
-    model.eval()
-    
+def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezier_degree, savefile):
     with torch.no_grad():
-        fig, ax = plt.subplots(args.nsamples, 2 if not args.variational else (args.rsamples + 1),
-            figsize=(8 if not args.variational else args.rsamples * 4, args.nsamples * 4))
+        fig, ax = plt.subplots(nsamples, 2 if not variational else (rsamples + 1),
+            figsize=(8 if not variational else rsamples * 4, nsamples * 4))
         for i, (X, (_, _, _), _) in enumerate(qdl):
-            if i >= args.nsamples:
+            if i >= nsamples:
                 break
 
-            h_initial = torch.zeros(args.layers * 2, 1, args.hidden, dtype=torch.float32)
+            h_initial = torch.zeros(layers * 2, 1, hidden, dtype=torch.float32)
             if torch.cuda.is_available():
                 X, h_initial = X.cuda(), h_initial.cuda()
 
@@ -64,7 +45,7 @@ def main( args ):
             else:
                 X_numpy = X_.squeeze().numpy()
 
-            if not args.variational:
+            if not variational:
                 latent = model.encoder(X, h_initial)
                 normal = torch.distributions.Normal(latent.squeeze(), torch.zeros_like(latent.squeeze()))
             else:
@@ -74,18 +55,39 @@ def main( args ):
             ax[i, 0].scatter(X_numpy[:, 0], X_numpy[:,1])
             ax[i, 0].plot(X_numpy[:,0], X_numpy[:,1])
 
-            for s in range(1 if not args.variational else args.rsamples):
+            for s in range(1 if not variational else rsamples):
                 latent = normal.sample().unsqueeze(0)
-                curve = decode_stroke(model.decoder, latent)
+                curve = decode_stroke(model.decoder, latent, bezier_degree=bezier_degree)
 
-                if args.bezier_degree != 0:
+                if bezier_degree != 0:
                     draw_bezier(curve, annotate=False, draw_axis=ax[i, s + 1])
                 else:
                     ax[i, s + 1].plot(curve[:,0], curve[:,1])
             
-        plt.savefig(args.savefile)
+        plt.savefig(savefile)
         plt.xticks([]); plt.yticks([])
         plt.close()
+
+def main( args ):
+    qds = QuickDraw(args.root, categories=['face', 'airplane'], max_sketches_each_cat=2, mode=QuickDraw.STROKE,
+        start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
+    qdl = qds.get_dataloader(1)
+
+    model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True,
+        bezier_degree=args.bezier_degree, variational=args.variational)
+
+    model = model.float()
+    if torch.cuda.is_available():
+        model = model.cuda()
+
+    if os.path.exists(args.modelname):
+        model.load_state_dict(torch.load(args.modelname))
+    else:
+        raise 'Model file not found !'
+
+    model.eval()
+    inference(qdl, model, nsamples=args.nsamples, rsamples=args.rsamples, variational=args.variational,
+        hidden=args.hidden, layers=args.layers, bezier_degree=args.bezier_degree, savefile=args.savefile)
 
 if __name__ == '__main__':
     import argparse
