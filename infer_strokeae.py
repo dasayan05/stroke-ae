@@ -19,8 +19,7 @@ def decode_stroke(decoder, latent, bezier_degree, dtype=torch.float32):
         while True:
             y, s = decoder(px, latent, return_state=True)
             next_pt = y[0].detach().cpu().numpy()
-            next_pt_noise = np.random.multivariate_normal([0., 0.], np.eye(2) * 0.001) # hard noise
-            curve = np.vstack((curve, next_pt + next_pt_noise))
+            curve = np.vstack((curve, next_pt))
             if curve.shape[0] >= (bezier_degree + 1):
                 break
             px = pack_padded_sequence(y[0].unsqueeze(1), torch.tensor([1]), enforce_sorted=False)

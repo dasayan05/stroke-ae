@@ -56,9 +56,9 @@ def main( args ):
             else:
                 latent, out = model(X, h_initial)
 
-            REC_loss = strokemse(out, Y, L, latent) # * (2 * args.hidden)
+            REC_loss = strokemse(out, Y, L, latent) * (2 * args.hidden)
             if args.variational:
-                KLD_loss = KLD * anneal_factor #* args.latent
+                KLD_loss = KLD * anneal_factor * args.latent
             else:
                 KLD_loss = torch.tensor(0.)
 

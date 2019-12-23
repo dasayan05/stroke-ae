@@ -62,7 +62,8 @@ class RNNStrokeDecoder(nn.Module):
         self.cell = nn.GRU(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=dropout)
 
         # Output layer
-        self.next = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
+        self.next_mu = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
+        self.next_std = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
 
     def forward(self, x, h_initial, return_state=False):
         H_f, H_b = torch.split(h_initial, [self.n_hidden, self.n_hidden], dim=1)
@@ -74,7 +75,10 @@ class RNNStrokeDecoder(nn.Module):
         out = []
         for hn, l in zip(hns, lengths):
             h = hn[:l, :]
-            out.append(self.next(h))
+            next_mu = self.next_mu(h)
+            next_std = torch.exp(self.next_std(h))
+            m = torch.distributions.Normal(next_mu, next_std)
+            out.append(m.rsample())
         
         if not return_state:
             return out
