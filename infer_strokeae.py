@@ -18,7 +18,9 @@ def decode_stroke(decoder, latent, bezier_degree, dtype=torch.float32):
     with torch.no_grad():
         while True:
             y, s = decoder(px, latent, return_state=True)
-            curve = np.vstack((curve, y[0].detach().cpu().numpy()))
+            next_pt = y[0].detach().cpu().numpy()
+            next_pt_noise = np.random.multivariate_normal([0., 0.], np.eye(2) * 0.001) # hard noise
+            curve = np.vstack((curve, next_pt + next_pt_noise))
             if curve.shape[0] >= (bezier_degree + 1):
                 break
             px = pack_padded_sequence(y[0].unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
@@ -28,8 +30,7 @@ def decode_stroke(decoder, latent, bezier_degree, dtype=torch.float32):
 
 def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezier_degree, savefile):
     with torch.no_grad():
-        fig, ax = plt.subplots(nsamples, 2 if not variational else (rsamples + 1),
-            figsize=(8 if not variational else rsamples * 4, nsamples * 4))
+        fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=(rsamples * 4, nsamples * 4))
         for i, (X, (_, _, _), _) in enumerate(qdl):
             if i >= nsamples:
                 break
@@ -55,7 +56,7 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
             ax[i, 0].scatter(X_numpy[:, 0], X_numpy[:,1])
             ax[i, 0].plot(X_numpy[:,0], X_numpy[:,1])
 
-            for s in range(1 if not variational else rsamples):
+            for s in range(rsamples):
                 latent = normal.sample().unsqueeze(0)
                 curve = decode_stroke(model.decoder, latent, bezier_degree=bezier_degree)
 
