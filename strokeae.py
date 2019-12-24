@@ -65,7 +65,7 @@ class RNNStrokeDecoder(nn.Module):
         self.next_mu = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
         self.next_std = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
 
-    def forward(self, x, h_initial, return_state=False):
+    def forward(self, x, h_initial):
         H_f, H_b = torch.split(h_initial, [self.n_hidden, self.n_hidden], dim=1)
         h_initial = torch.stack([H_f, H_b], dim=0)
 
@@ -80,11 +80,7 @@ class RNNStrokeDecoder(nn.Module):
             m = torch.distributions.Normal(next_mu, next_std)
             out.append(m.rsample())
         
-        if not return_state:
-            return out
-        else:
-            state = torch.cat([state[0], state[1]], dim=1)
-            return out, state
+        return out
 
 class RNNStrokeAE(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, n_output, n_latent, dtype=torch.float32, bidirectional=True,

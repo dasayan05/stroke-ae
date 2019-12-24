@@ -8,24 +8,17 @@ from strokeae import RNNStrokeAE
 from beziercurve import draw_bezier
 
 def decode_stroke(decoder, latent, bezier_degree, dtype=torch.float32):
-    curve = np.empty((0, 2))
-    x_init = torch.tensor([[0., 0.]], dtype=dtype)
-    px = pack_padded_sequence(x_init.unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
+    x_init = torch.tensor([[0., 0.]] * bezier_degree, dtype=dtype)
+    px = pack_padded_sequence(x_init.unsqueeze(0), torch.tensor([bezier_degree]), enforce_sorted=False, batch_first=True)
     
     if torch.cuda.is_available():
         px = px.cuda()
     
     with torch.no_grad():
-        while True:
-            y, s = decoder(px, latent, return_state=True)
-            next_pt = y[0].detach().cpu().numpy()
-            curve = np.vstack((curve, next_pt))
-            if curve.shape[0] >= (bezier_degree + 1):
-                break
-            px = pack_padded_sequence(y[0].unsqueeze(1), torch.tensor([1]), enforce_sorted=False)
-            latent = s
+        y = decoder(px, latent)
+        curve = y[0]
 
-    return curve
+    return curve.detach().cpu().numpy()
 
 def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezier_degree, savefile):
     with torch.no_grad():
