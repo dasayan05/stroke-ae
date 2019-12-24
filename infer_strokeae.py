@@ -15,10 +15,11 @@ def decode_stroke(decoder, latent, bezier_degree, dtype=torch.float32):
         px = px.cuda()
     
     with torch.no_grad():
-        y = decoder(px, latent)
-        curve = y[0]
+        y_ctrlpt, y_ratw = decoder(px, latent)
+        curve = y_ctrlpt[0]
+        y_ratw = y_ratw[0]
 
-    return curve.detach().cpu().numpy()
+    return curve.detach().cpu().numpy(), y_ratw.detach().cpu().numpy()
 
 def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezier_degree, savefile):
     with torch.no_grad():
@@ -50,12 +51,9 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
 
             for s in range(rsamples):
                 latent = normal.sample().unsqueeze(0)
-                curve = decode_stroke(model.decoder, latent, bezier_degree=bezier_degree)
+                ctrlpt, ratw = decode_stroke(model.decoder, latent, bezier_degree=bezier_degree)
 
-                if bezier_degree != 0:
-                    draw_bezier(curve, annotate=False, draw_axis=ax[i, s + 1])
-                else:
-                    ax[i, s + 1].plot(curve[:,0], curve[:,1])
+                draw_bezier(ctrlpt, ratw, annotate=False, draw_axis=ax[i, s + 1])
             
         plt.savefig(savefile)
         plt.xticks([]); plt.yticks([])

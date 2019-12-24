@@ -92,7 +92,7 @@ class RNNStrokeDecoder(nn.Module):
             out_ctrlpt.append(c.rsample())
             out_ratw.append(ratw_mu)
         
-        return out
+        return out_ctrlpt, out_ratw
 
 class RNNStrokeAE(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, n_output, n_latent, dtype=torch.float32, bidirectional=True,

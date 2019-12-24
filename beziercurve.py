@@ -7,7 +7,7 @@ def bij(t, i, n):
     # binomial coefficients
     return comb(n, i) * (t ** i) * ((1-t) ** (n-i))
 
-def draw_bezier(ctrlPoints, nCtrlPoints = 0, nPointsCurve = 100, annotate = True, return_curve=False,
+def draw_bezier(ctrlPoints, rWeights = None, nCtrlPoints = 0, nPointsCurve = 100, annotate = True, return_curve=False,
     ctrlPointPlotKwargs = dict(marker='X', color='r', linestyle='--'), curvePlotKwagrs = dict(color='g'),
     draw_axis = plt):
     '''
@@ -43,13 +43,25 @@ def draw_bezier(ctrlPoints, nCtrlPoints = 0, nPointsCurve = 100, annotate = True
     #      s += bij(t, pointID, nCtrlPoints-1) * point
     #   curve[step] = s
     ts = np.linspace(0., 1., num = nPointsCurve)
-    curve = np.matmul(
-      T(ts, nCtrlPoints - 1),
-      np.matmul(
-        bezier_matrix(nCtrlPoints-1),
-        ctrlPoints
-      )
-    )
+    
+    if rWeights is None:
+        curve = np.matmul(
+          T(ts, nCtrlPoints - 1),
+          np.matmul(
+            bezier_matrix(nCtrlPoints-1),
+            ctrlPoints
+          )
+        )
+    else:
+        curve = np.matmul(
+          T(ts, nCtrlPoints - 1),
+          np.matmul(
+            bezier_matrix(nCtrlPoints-1),
+            np.diag(rWeights)
+          )
+        )
+        curve = curve / np.expand_dims(curve.sum(1), 1)
+        curve = np.matmul(curve, ctrlPoints)
 
     if return_curve: # Return the points of the curve as 'np.array'
       return curve
