@@ -21,7 +21,7 @@ def main( args ):
 
     model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True,
         bezier_degree=args.bezier_degree, variational=args.variational)
-    strokemse = StrokeMSELoss(args.bezier_degree, args.latent, bez_reg_weight=1e-2)
+    strokemse = StrokeMSELoss(args.bezier_degree, args.latent, bez_reg_weight_p=1e-3, bez_reg_weight_r=1e-3)
     
     model, strokemse = model.float(), strokemse.float()
     if torch.cuda.is_available():
@@ -52,11 +52,11 @@ def main( args ):
                 anneal_factor = 1.
 
             if args.variational:
-                latent, out, KLD = model(X, h_initial)
+                latent, (out_ctrlpt, out_ratw), KLD = model(X, h_initial)
             else:
-                latent, out = model(X, h_initial)
+                latent, (out_ctrlpt, out_ratw) = model(X, h_initial)
 
-            REC_loss = strokemse(out, Y, L, latent)
+            REC_loss = strokemse(out_ctrlpt, out_ratw, Y, L, latent)
             if args.variational:
                 REC_loss = REC_loss * (2 * args.hidden)
                 KLD_loss = KLD * anneal_factor * args.latent

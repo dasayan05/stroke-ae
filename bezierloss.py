@@ -3,13 +3,14 @@ import torch.nn as nn
 from beziermatrix import bezier_matrix
 
 class BezierLoss(nn.Module):
-    def __init__(self, degree, reg_weight = 1e-2):
+    def __init__(self, degree, reg_weight_p = 1e-2, reg_weight_r = 1e-2):
         super().__init__()
         self.degree = degree
         self.M = self._M(self.degree)
         if torch.cuda.is_available():
             self.M = self.M.cuda()
-        self.reg_weight = reg_weight
+        self.reg_weight_p = reg_weight_p
+        self.reg_weight_r = reg_weight_r
 
     def _consecutive_dist(self, XY):
         return (((XY[1:,:] - XY[0:-1,:])**2).sum(axis=1))**0.5
@@ -30,10 +31,15 @@ class BezierLoss(nn.Module):
     def _M(self, d: 'degree'):
         return torch.tensor(bezier_matrix(d), dtype=torch.float32)
 
-    def forward(self, P, XY, ts=None):
+    def forward(self, P, R, XY, ts=None):
         if ts is None:
             ts = self._heuristic_ts(XY)
 
-        C = torch.mm(self._T(ts, self.degree), torch.mm(self.M, P))
-        l = ((C - XY)**2).mean() + self.reg_weight * (self._consecutive_dist(P)**2).mean()
+        # breakpoint()
+        C = torch.mm(self._T(ts, self.degree), torch.mm(self.M, torch.diag(R)))
+        C = C / C.sum(1).unsqueeze(1)
+        C = torch.mm(C, P)
+
+        l = ((C - XY)**2).mean() + self.reg_weight_p * (self._consecutive_dist(P)**2).mean() + self.reg_weight_r * torch.mean(R)
+        
         return l
