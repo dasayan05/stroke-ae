@@ -76,7 +76,7 @@ class RNNStrokeDecoder(nn.Module):
         for hn, l in zip(hns, lengths):
             h = hn[:l, :]
             next_mu = self.next_mu(h)
-            next_std = torch.exp(self.next_std(h))
+            next_std = self.next_std(h)
             m = torch.distributions.Normal(next_mu, next_std)
             out.append(m.rsample())
         
