@@ -62,8 +62,11 @@ class RNNStrokeDecoder(nn.Module):
         self.cell = nn.GRU(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=dropout)
 
         # Output layer
-        self.next_mu = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
-        self.next_std = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
+        self.ctrlpt_mu = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
+        self.ctrlpt_std = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
+        # Using Rational Bezier curve
+        self.ratw_mu = torch.nn.Linear(self.n_hidden * self.bidirectional, 1) # rational weights mean
+        # self.ratw_std = torch.nn.Linear(self.n_hidden * self.bidirectional, 1) # rational weights sigma
 
     def forward(self, x, h_initial):
         H_f, H_b = torch.split(h_initial, [self.n_hidden, self.n_hidden], dim=1)
@@ -72,13 +75,22 @@ class RNNStrokeDecoder(nn.Module):
         out, state = self.cell(x, h_initial)
         hns, lengths = pad_packed_sequence(out, batch_first=True)
         
-        out = []
+        out_ctrlpt, out_ratw = [], []
         for hn, l in zip(hns, lengths):
             h = hn[:l, :]
-            next_mu = self.next_mu(h)
-            next_std = self.next_std(h)
-            m = torch.distributions.Normal(next_mu, next_std)
-            out.append(m.rsample())
+            ctrlpt_mu = self.ctrlpt_mu(h)
+            ctrlpt_std = self.ctrlpt_std(h)
+            ratw_mu = self.ratw_mu(h[1:-1]).squeeze()
+            # ratw_std = self.ratw_std(h[1:-1]).squeeze()
+            ratw_mu = torch.tensor([0., *ratw_mu, 0.], device=ratw_mu.device)
+            # ratw_std = torch.tensor([0., *ratw_std, 0.], device=ratw_std.device)
+            ratw_mu = torch.sigmoid(ratw_mu)
+            # breakpoint()
+
+            c = torch.distributions.Normal(ctrlpt_mu, ctrlpt_std)
+            # r = torch.distributions.Normal(ratw_mu, ratw_std)
+            out_ctrlpt.append(c.rsample())
+            out_ratw.append(ratw_mu)
         
         return out
 
@@ -125,21 +137,21 @@ class RNNStrokeAE(nn.Module):
         
         x = pack_padded_sequence(x, l, enforce_sorted=False)
 
-        out = self.decoder(x, latent)
+        out_ctrlpt, out_ratw = self.decoder(x, latent)
 
         if self.variational:
             if self.training:
-                return latent, out, KLD
+                return latent, (out_ctrlpt, out_ratw), KLD
             else:
-                return out, std
+                return (out_ctrlpt, out_ratw), std
         else:
             if self.training:
-                return latent, out
+                return latent, (out_ctrlpt, out_ratw)
             else:
-                return out
+                return (out_ctrlpt, out_ratw)
 
 class StrokeMSELoss(nn.Module):
-    def __init__(self, bezier_degree, n_latent, min_stroke_len=2, bez_reg_weight=1e-2):
+    def __init__(self, bezier_degree, n_latent, min_stroke_len=2, bez_reg_weight_p=1e-2, bez_reg_weight_r=1e-2):
         super().__init__()
 
         # Track the parameters
@@ -149,13 +161,13 @@ class StrokeMSELoss(nn.Module):
 
         # standard MSELoss
         self.mseloss = nn.MSELoss()
-        self.bezierloss = BezierLoss(self.bezier_degree, reg_weight=bez_reg_weight)
+        self.bezierloss = BezierLoss(self.bezier_degree, reg_weight_p=bez_reg_weight_p, reg_weight_r=bez_reg_weight_r)
 
         # global t-estimator
         self.tcell = nn.GRU(2, self.n_latent, 1, bidirectional=False)
         self.tarm = nn.Linear(self.n_latent, 1)
 
-    def forward(self, out_bz, xy, lens, latent):
+    def forward(self, out_ctrlpt, out_ratw, xy, lens, latent):
         loss = []
 
         packed_xy = pack_padded_sequence(xy, lens, batch_first=True, enforce_sorted=False)
@@ -163,12 +175,12 @@ class StrokeMSELoss(nn.Module):
         t, _ = pad_packed_sequence(t, batch_first=True)
         t = self.tarm(t).squeeze()
 
-        for q, (y_, y, l, t_logit, lat) in enumerate(zip(out_bz, xy, lens, t, latent)):
+        for q, (y_ctrlpt, y_ratw, y, l, t_logit, lat) in enumerate(zip(out_ctrlpt, out_ratw, xy, lens, t, latent)):
             if l >= 2 and (y.sum().item() != 0.0):
                 y, t_logit = y[:l.item(),:], t_logit[:l.item()]
                 # bezierloss_x = getattr(self, f'bezierloss_{q}')
                 t_actual = torch.cumsum(torch.softmax(t_logit, 0), 0)
-                loss.append( self.bezierloss(y_, y, ts=t_actual) )
+                loss.append( self.bezierloss(y_ctrlpt, y_ratw, y, ts=t_actual) )
 
         return sum(loss) / len(loss)
 
