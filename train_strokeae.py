@@ -21,7 +21,7 @@ def main( args ):
 
     model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True,
         bezier_degree=args.bezier_degree, variational=args.variational)
-    strokemse = StrokeMSELoss(args.bezier_degree, args.latent, bez_reg_weight_p=1e-3, bez_reg_weight_r=1e-3)
+    strokemse = StrokeMSELoss(args.bezier_degree, args.latent, bez_reg_weight_p=1e-2, bez_reg_weight_r=1e-5)
     
     model, strokemse = model.float(), strokemse.float()
     if torch.cuda.is_available():
