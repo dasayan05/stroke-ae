@@ -24,7 +24,7 @@ def decode_stroke(decoder, latent, bezier_degree, dtype=torch.float32):
 def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezier_degree, savefile):
     with torch.no_grad():
         fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=(rsamples * 4, nsamples * 4))
-        for i, (X, (_, _, _), _) in enumerate(qdl):
+        for i, (X, _) in enumerate(qdl):
             if i >= nsamples:
                 break
 

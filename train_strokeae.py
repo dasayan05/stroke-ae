@@ -7,13 +7,20 @@ from quickdraw.quickdraw import QuickDraw
 from strokeae import RNNStrokeAE, StrokeMSELoss
 from infer_strokeae import inference
 
+def length_gt(s, f):
+    if len(s) > f:
+        return True, s
+    else:
+        return False, None
+
 def main( args ):
     chosen_classes = [ 'cat', 'chair', 'face' , 'firetruck', 'mosquito', 'owl', 'pig', 'purse', 'shoe' ]
 
-    qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=8000, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
+    qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], raw=True, max_sketches_each_cat=8000, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
     
-    qds_infer = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=15, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
+    qds_infer = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], filter_func=lambda s: length_gt(s, 5),
+        raw=True, max_sketches_each_cat=15, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl_infer = qds_infer.get_dataloader(1)
 
     # chosen device
@@ -36,7 +43,7 @@ def main( args ):
     for e in range(args.epochs):
 
         model.train()
-        for i, (X, (_, _, _), _) in enumerate(qdl):
+        for i, (X, _) in enumerate(qdl):
             (Y, L) = pad_packed_sequence(X, batch_first=True)
             
             h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
