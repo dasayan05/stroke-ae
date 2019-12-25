@@ -13,7 +13,7 @@ def main( args ):
     qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=8000, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
     
-    qds_infer = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=2, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
+    qds_infer = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=15, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl_infer = qds_infer.get_dataloader(1)
 
     # chosen device
