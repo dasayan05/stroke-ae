@@ -43,7 +43,6 @@ def main( args ):
 
         model.train()
         for i, (X, _) in enumerate(qdl):
-            break
             (Y, L) = pad_packed_sequence(X, batch_first=True)
             
             h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
