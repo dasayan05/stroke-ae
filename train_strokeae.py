@@ -8,7 +8,7 @@ from strokeae import RNNStrokeAE, StrokeMSELoss
 from infer_strokeae import inference
 
 def length_gt(s, f):
-    if len(s) > f:
+    if len(s[0]) > f:
         return True, s
     else:
         return False, None
@@ -21,7 +21,6 @@ def main( args ):
     
     qds_infer = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], filter_func=lambda s: length_gt(s, 5),
         raw=True, max_sketches_each_cat=15, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
-    qdl_infer = qds_infer.get_dataloader(1)
 
     # chosen device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -44,6 +43,7 @@ def main( args ):
 
         model.train()
         for i, (X, _) in enumerate(qdl):
+            break
             (Y, L) = pad_packed_sequence(X, batch_first=True)
             
             h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
@@ -90,7 +90,7 @@ def main( args ):
 
         model.eval()
         savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
-        inference(qdl_infer, model, layers=args.layers, hidden=args.hidden, variational=args.variational,
+        inference(qds_infer.get_dataloader(1), model, layers=args.layers, hidden=args.hidden, variational=args.variational,
                 bezier_degree=args.bezier_degree, savefile=savefile, nsamples=6, rsamples=6)
 
 if __name__ == '__main__':
