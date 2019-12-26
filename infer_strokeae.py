@@ -29,8 +29,9 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
                 break
 
             h_initial = torch.zeros(layers * 2, 1, hidden, dtype=torch.float32)
+            c_initial = torch.zeros(layers * 2, 1, hidden, dtype=torch.float32)
             if torch.cuda.is_available():
-                X, h_initial = X.cuda(), h_initial.cuda()
+                X, h_initial, c_initial = X.cuda(), h_initial.cuda(), c_initial.cuda()
 
             X_, l_ = pad_packed_sequence(X)
 
@@ -40,10 +41,10 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
                 X_numpy = X_.squeeze().numpy()
 
             if not variational:
-                latent = model.encoder(X, h_initial)
+                latent = model.encoder(X, h_initial, c_initial)
                 normal = torch.distributions.Normal(latent.squeeze(), torch.zeros_like(latent.squeeze()))
             else:
-                mu, sigma = model.encoder(X, h_initial)
+                mu, sigma = model.encoder(X, h_initial, c_initial)
                 normal = torch.distributions.Normal(mu.squeeze(), sigma.squeeze())
 
             ax[i, 0].scatter(X_numpy[:, 0], X_numpy[:,1])

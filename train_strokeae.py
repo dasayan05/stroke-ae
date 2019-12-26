@@ -46,8 +46,9 @@ def main( args ):
             (Y, L) = pad_packed_sequence(X, batch_first=True)
             
             h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
+            c_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
             if torch.cuda.is_available():
-                X, Y, L, h_initial = X.cuda(), Y.cuda(), L.cuda(), h_initial.cuda()
+                X, Y, L, h_initial, c_initial = X.cuda(), Y.cuda(), L.cuda(), h_initial.cuda(), c_initial.cuda()
             
             if args.anneal_KLD:
                 # Annealing factor for KLD term
@@ -58,9 +59,9 @@ def main( args ):
                 anneal_factor = 1.
 
             if args.variational:
-                latent, (out_ctrlpt, out_ratw), KLD = model(X, h_initial)
+                latent, (out_ctrlpt, out_ratw), KLD = model(X, h_initial, c_initial)
             else:
-                latent, (out_ctrlpt, out_ratw) = model(X, h_initial)
+                latent, (out_ctrlpt, out_ratw) = model(X, h_initial, c_initial)
 
             REC_loss = strokemse(out_ctrlpt, out_ratw, Y, L, latent)
             if args.variational:

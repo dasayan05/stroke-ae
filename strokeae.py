@@ -17,27 +17,30 @@ class RNNStrokeEncoder(nn.Module):
         self.variational = variational
         self.n_latent = n_latent
 
-        self.cell = nn.GRU(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=self.dropout)
+        self.cell = nn.LSTM(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=self.dropout)
 
         # The latent vector producer
-        self.latent = nn.Linear(2 * self.n_hidden, self.n_latent)
+        self.latent = nn.Linear(2 * self.n_hidden * 2, self.n_latent)
 
         if self.variational:
-            self.logvar = nn.Linear(2 * self.n_hidden, self.n_latent)
+            self.logvar = nn.Linear(2 * self.n_hidden * 2, self.n_latent)
 
     def reparam(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return (mu + eps * std)
 
-    def forward(self, x, h_initial, KLD_anneal = 1):
-        _, h_final = self.cell(x, h_initial)
+    def forward(self, x, h_initial, c_initial, KLD_anneal = 1):
+        _, (h_final, c_final) = self.cell(x, (h_initial, c_initial))
         H = torch.cat([h_final[0], h_final[1]], dim=1)
+        C = torch.cat([c_final[0], h_final[1]], dim=1)
+        HC = torch.cat([H, C], dim=1)
+
         if not self.variational:
-            return self.latent(H)
+            return self.latent(HC)
         else:
-            mu = self.latent(H)
-            logvar = self.logvar(H) * KLD_anneal
+            mu = self.latent(HC)
+            logvar = self.logvar(HC) * KLD_anneal
 
             # KL divergence term of the loss
             KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
@@ -48,18 +51,22 @@ class RNNStrokeEncoder(nn.Module):
                 return mu, torch.exp(0.5 * logvar)
 
 class RNNStrokeDecoder(nn.Module):
-    def __init__(self, n_input, n_layer, n_output, n_latent, dtype=torch.float32, bidirectional=True, dropout=0.5):
+    def __init__(self, n_input, n_hidden, n_layer, n_latent, n_output, dtype=torch.float32, bidirectional=True, dropout=0.5):
         super().__init__()
 
         # Track parameters
-        self.n_input, self.n_hidden, self.n_output = n_input, n_latent // 2, n_output
+        self.n_input, self.n_hidden, self.n_output = n_input, n_hidden, n_output
         self.n_layer = n_layer
         self.dtype = dtype
         self.bidirectional = 2 if bidirectional else 1
         self.dropout = dropout
         self.n_latent = n_latent
 
-        self.cell = nn.GRU(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=dropout)
+        self.cell = nn.LSTM(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=dropout)
+
+        # project the latent into (H0, C0) using these
+        self.H = nn.Linear(self.n_latent, self.n_hidden)
+        self.C = nn.Linear(self.n_latent, self.n_hidden)
 
         # Output layer
         self.ctrlpt_mu = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
@@ -68,12 +75,17 @@ class RNNStrokeDecoder(nn.Module):
         self.ratw_mu = torch.nn.Linear(self.n_hidden * self.bidirectional, 1) # rational weights mean
         # self.ratw_std = torch.nn.Linear(self.n_hidden * self.bidirectional, 1) # rational weights sigma
 
-    def forward(self, x, h_initial):
-        H_f, H_b = torch.split(h_initial, [self.n_hidden, self.n_hidden], dim=1)
-        h_initial = torch.stack([H_f, H_b], dim=0)
+    def forward(self, x, latent):
+        # H_f, H_b = torch.split(h_initial, [self.n_hidden, self.n_hidden], dim=1)
+        # h_initial = torch.stack([H_f, H_b], dim=0)
+        h_initial = self.H(latent).unsqueeze(0)
+        c_initial = self.C(latent).unsqueeze(0)
+        # breakpoint()
 
-        out, state = self.cell(x, h_initial)
+        out, (_, _) = self.cell(x, (h_initial, c_initial))
         hns, lengths = pad_packed_sequence(out, batch_first=True)
+        # hns = hns.permute(1, 0, 2) # Make it batch first
+        # breakpoint()
         
         out_ctrlpt, out_ratw = [], []
         for hn, l in zip(hns, lengths):
@@ -112,30 +124,34 @@ class RNNStrokeAE(nn.Module):
         self.encoder = RNNStrokeEncoder(self.n_input, self.n_hidden, self.n_layer, self.n_latent, variational=self.variational,
             dtype=self.dtype, bidirectional=bidirectional, dropout=self.dropout)
         # Decoder is always twice deep the encoder because of bi-uni nature of enc-dec
-        self.decoder = RNNStrokeDecoder(self.n_input, self.n_layer * 2, self.n_output, self.n_latent,
+        self.decoder = RNNStrokeDecoder(self.n_input, self.n_hidden, self.n_layer, self.n_latent, self.n_output,
             dtype=self.dtype, bidirectional=False, dropout=self.dropout)
 
 
-    def forward(self, x, h_initial, KLD_anneal = 1.):
+    def forward(self, x, h_initial, c_initial, KLD_anneal = 1.):
         if not self.variational:
-            latent = self.encoder(x, h_initial)
+            latent = self.encoder(x, h_initial, c_initial)
         else:
             if self.training:
-                latent, KLD = self.encoder(x, h_initial, KLD_anneal=KLD_anneal)
+                latent, KLD = self.encoder(x, h_initial, c_initial, KLD_anneal=KLD_anneal)
             else:
-                latent, std = self.encoder(x, h_initial)
+                latent, std = self.encoder(x, h_initial, c_initial)
 
-        x, l = pad_packed_sequence(x)
-        x = torch.zeros_like(x) # Input free decoder
-        if self.bezier_degree != 0:
-            # Bezier curve should have output sequence
-            # length always equal to 'self.bezier_degree'
-            x = x[:self.bezier_degree + 1,:,:]
-            l = torch.ones_like(l) * (self.bezier_degree + 1)
-        else:
-            raise 'Bezier curve with degree zero not possible'
+        # x, l = pad_packed_sequence(x, batch_first=True)
+        # x = torch.zeros_like(x) # Input free decoder
+        # if self.bezier_degree != 0:
+        #     # Bezier curve should have output sequence
+        #     # length always equal to 'self.bezier_degree'
+        #     x = x[:,:self.bezier_degree + 1,:]
+        #     l = torch.ones_like(l) * (self.bezier_degree + 1)
+        # else:
+        #     raise 'Bezier curve with degree zero not possible'
+        batch_size = x.batch_sizes.max()
+        x = torch.zeros((batch_size, self.bezier_degree + 1, self.n_input), device=x.data.device)
+        l = torch.ones((batch_size,), device=x.data.device) * (self.bezier_degree + 1)
         
-        x = pack_padded_sequence(x, l, enforce_sorted=False)
+        x = pack_padded_sequence(x, l, enforce_sorted=False, batch_first=True)
+        # breakpoint()
 
         out_ctrlpt, out_ratw = self.decoder(x, latent)
 
