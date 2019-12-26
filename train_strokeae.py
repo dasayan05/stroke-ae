@@ -91,7 +91,7 @@ def main( args ):
         model.eval()
         savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
         inference(qds_infer.get_dataloader(1), model, layers=args.layers, hidden=args.hidden, variational=args.variational,
-                bezier_degree=args.bezier_degree, savefile=savefile, nsamples=args.nsamples, rsamples=args.rsamples)
+                bezier_degree=args.bezier_degree, savefile=savefile, nsamples=args.nsample, rsamples=args.rsample)
 
 if __name__ == '__main__':
     import argparse

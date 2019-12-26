@@ -1,5 +1,6 @@
 import torch, pdb
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 from bezierloss import BezierLoss
@@ -67,6 +68,7 @@ class RNNStrokeDecoder(nn.Module):
         # project the latent into (H0, C0) using these
         self.H = nn.Linear(self.n_latent, self.n_hidden)
         self.C = nn.Linear(self.n_latent, self.n_hidden)
+        self.tanh = nn.Tanh()
 
         # Output layer
         self.ctrlpt_mu = torch.nn.Linear(self.n_hidden * self.bidirectional, self.n_output)
@@ -80,7 +82,7 @@ class RNNStrokeDecoder(nn.Module):
         # h_initial = torch.stack([H_f, H_b], dim=0)
         h_initial = self.H(latent).unsqueeze(0)
         c_initial = self.C(latent).unsqueeze(0)
-        # breakpoint()
+        h_initial, c_initial = self.tanh(h_initial), self.tanh(c_initial)
 
         out, (_, _) = self.cell(x, (h_initial, c_initial))
         hns, lengths = pad_packed_sequence(out, batch_first=True)
@@ -180,14 +182,23 @@ class StrokeMSELoss(nn.Module):
         self.bezierloss = BezierLoss(self.bezier_degree, reg_weight_p=bez_reg_weight_p, reg_weight_r=bez_reg_weight_r)
 
         # global t-estimator
-        self.tcell = nn.GRU(2, self.n_latent, 1, bidirectional=False)
-        self.tarm = nn.Linear(self.n_latent, 1)
+        self.Hf = nn.Linear(self.n_latent, self.n_latent)
+        self.Hb = nn.Linear(self.n_latent, self.n_latent)
+        self.tanh = nn.Tanh()
+
+        self.tcell = nn.GRU(2, self.n_latent, 1, bidirectional=True)
+        self.tarm = nn.Linear(2 * self.n_latent, 1)
 
     def forward(self, out_ctrlpt, out_ratw, xy, lens, latent):
         loss = []
 
+        # project latent vector into Hf, Hb
+        h_f = self.Hf(latent).unsqueeze(0)
+        h_b = self.Hb(latent).unsqueeze(0)
+        h = self.tanh(torch.cat([h_f, h_b], dim=0))
+
         packed_xy = pack_padded_sequence(xy, lens, batch_first=True, enforce_sorted=False)
-        t, _ = self.tcell(packed_xy, latent.unsqueeze(0))
+        t, _ = self.tcell(packed_xy, h)
         t, _ = pad_packed_sequence(t, batch_first=True)
         t = self.tarm(t).squeeze()
 
