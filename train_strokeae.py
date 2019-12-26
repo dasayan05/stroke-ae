@@ -16,18 +16,18 @@ def length_gt(s, f):
 def main( args ):
     chosen_classes = [ 'cat', 'chair', 'face' , 'firetruck', 'mosquito', 'owl', 'pig', 'purse', 'shoe' ]
 
-    qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], raw=True, max_sketches_each_cat=8000, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
+    qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], raw=args.raw, max_sketches_each_cat=8000, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
     
     qds_infer = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], filter_func=lambda s: length_gt(s, 5),
-        raw=True, max_sketches_each_cat=15, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
+        raw=args.raw, max_sketches_each_cat=15, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
 
     # chosen device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     model = RNNStrokeAE(2, args.hidden, args.layers, 2, args.latent, bidirectional=True,
         bezier_degree=args.bezier_degree, variational=args.variational)
-    strokemse = StrokeMSELoss(args.bezier_degree, args.latent, bez_reg_weight_p=1e-2, bez_reg_weight_r=1e-5)
+    strokemse = StrokeMSELoss(args.bezier_degree, args.latent, bez_reg_weight_p=args.regp, bez_reg_weight_r=args.regr)
     
     model, strokemse = model.float(), strokemse.float()
     if torch.cuda.is_available():
@@ -91,7 +91,7 @@ def main( args ):
         model.eval()
         savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
         inference(qds_infer.get_dataloader(1), model, layers=args.layers, hidden=args.hidden, variational=args.variational,
-                bezier_degree=args.bezier_degree, savefile=savefile, nsamples=6, rsamples=6)
+                bezier_degree=args.bezier_degree, savefile=savefile, nsamples=args.nsamples, rsamples=args.rsamples)
 
 if __name__ == '__main__':
     import argparse
@@ -100,6 +100,7 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=str, required=True, help='quickdraw binary file')
     parser.add_argument('--base', type=str, required=False, default='.', help='base folder of operation (needed for condor)')
     parser.add_argument('--n_classes', '-c', type=int, required=False, default=3, help='no. of classes')
+    parser.add_argument('--raw', action='store_true', help='Use raw QuickDraw data')
 
     parser.add_argument('-V', '--variational', action='store_true', help='Impose prior on latent space')
     parser.add_argument('--hidden', type=int, required=False, default=16, help='no. of hidden neurons')
@@ -111,10 +112,14 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, required=False, default=1e-4, help='learning rate')
     parser.add_argument('-e', '--epochs', type=int, required=False, default=40, help='no of epochs')
     parser.add_argument('--anneal_KLD', action='store_true', help='Increase annealing factor of KLD gradually')
+    parser.add_argument('--regp', type=float, required=False, default=1e-2, help='Regularizer weight on control points')
+    parser.add_argument('--regr', type=float, required=False, default=1e-5, help='Regularizer weight on rational weights')
     
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('-i', '--interval', type=int, required=False, default=100, help='logging interval')
+    parser.add_argument('--nsample', type=int, required=False, default=6, help='no. of data samples for inference')
+    parser.add_argument('--rsample', type=int, required=False, default=6, help='no. of distribution samples for inference')
     args = parser.parse_args()
 
     main( args )
