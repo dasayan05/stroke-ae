@@ -6,7 +6,7 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from bezierloss import BezierLoss
 
 class RNNStrokeEncoder(nn.Module):
-    def __init__(self, n_input, n_hidden, n_layer, n_latent, dtype=torch.float32, bidirectional=True, dropout=0.5, variational=True):
+    def __init__(self, n_input, n_hidden, n_layer, n_latent, dtype=torch.float32, bidirectional=True, variational=True):
         super().__init__()
 
         # Track parameters
@@ -14,11 +14,10 @@ class RNNStrokeEncoder(nn.Module):
         self.n_layer = n_layer
         self.dtype = dtype
         self.bidirectional = 2 if bidirectional else 1
-        self.dropout = dropout
         self.variational = variational
         self.n_latent = n_latent
 
-        self.cell = nn.LSTM(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=self.dropout)
+        self.cell = nn.LSTM(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional)
 
         # The latent vector producer
         self.latent = nn.Linear(2 * self.n_hidden * 2, self.n_latent)
@@ -52,7 +51,7 @@ class RNNStrokeEncoder(nn.Module):
                 return mu, torch.exp(0.5 * logvar)
 
 class RNNStrokeDecoder(nn.Module):
-    def __init__(self, n_input, n_hidden, n_layer, n_latent, n_output, dtype=torch.float32, bidirectional=True, dropout=0.5):
+    def __init__(self, n_input, n_hidden, n_layer, n_latent, n_output, dtype=torch.float32, bidirectional=True):
         super().__init__()
 
         # Track parameters
@@ -60,10 +59,9 @@ class RNNStrokeDecoder(nn.Module):
         self.n_layer = n_layer
         self.dtype = dtype
         self.bidirectional = 2 if bidirectional else 1
-        self.dropout = dropout
         self.n_latent = n_latent
 
-        self.cell = nn.LSTM(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional, dropout=dropout)
+        self.cell = nn.LSTM(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional)
 
         # project the latent into (H0, C0) using these
         self.H = nn.Linear(self.n_latent, self.n_hidden)
@@ -110,7 +108,7 @@ class RNNStrokeDecoder(nn.Module):
 
 class RNNStrokeAE(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, n_output, n_latent, dtype=torch.float32, bidirectional=True,
-                bezier_degree=0, dropout=0.5, variational=False):
+                bezier_degree=0, variational=False):
         super().__init__()
 
         # Track parameters
@@ -118,16 +116,15 @@ class RNNStrokeAE(nn.Module):
         self.n_layer = n_layer
         self.dtype = dtype
         self.bidirectional = 2 if bidirectional else 1
-        self.dropout = dropout
         self.bezier_degree = bezier_degree
         self.variational = variational
         self.n_latent = n_latent
 
         self.encoder = RNNStrokeEncoder(self.n_input, self.n_hidden, self.n_layer, self.n_latent, variational=self.variational,
-            dtype=self.dtype, bidirectional=bidirectional, dropout=self.dropout)
+            dtype=self.dtype, bidirectional=bidirectional)
         # Decoder is always twice deep the encoder because of bi-uni nature of enc-dec
         self.decoder = RNNStrokeDecoder(self.n_input, self.n_hidden, self.n_layer, self.n_latent, self.n_output,
-            dtype=self.dtype, bidirectional=False, dropout=self.dropout)
+            dtype=self.dtype, bidirectional=False)
 
 
     def forward(self, x, h_initial, c_initial, KLD_anneal = 1.):
