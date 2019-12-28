@@ -25,7 +25,8 @@ def main( args ):
     # chosen device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    model = RNNBezierAE(2, args.hidden, args.layers, args.bezier_degree, bidirectional=True, variational=args.variational)
+    model = RNNBezierAE(2, args.hidden, args.layers, args.bezier_degree, bidirectional=True,
+        variational=args.variational, dropout=args.dropout)
     
     model = model.float()
     if torch.cuda.is_available():
@@ -33,6 +34,7 @@ def main( args ):
 
     mseloss = torch.nn.MSELoss()
     optim = torch.optim.Adam(model.parameters(), lr=args.lr)
+    sched = torch.optim.lr_scheduler.StepLR(optim, step_size=10, gamma=0.8)
 
     writer = tb.SummaryWriter(os.path.join(args.base, 'logs', args.tag))
 
@@ -102,6 +104,9 @@ def main( args ):
         inference(qds_infer.get_dataloader(1), model, layers=args.layers, hidden=args.hidden, variational=args.variational,
                 bezier_degree=args.bezier_degree, savefile=savefile, nsamples=args.nsample, rsamples=args.rsample)
 
+        # invoke scheduler
+        sched.step()
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
@@ -117,6 +122,7 @@ if __name__ == '__main__':
     parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=5, help='degree of the bezier')
     
     parser.add_argument('-b','--batch_size', type=int, required=False, default=128, help='batch size')
+    parser.add_argument('--dropout', type=float, required=False, default=0.8, help='Dropout rate')
     parser.add_argument('--lr', type=float, required=False, default=1e-4, help='learning rate')
     parser.add_argument('-e', '--epochs', type=int, required=False, default=40, help='no of epochs')
     parser.add_argument('--anneal_KLD', action='store_true', help='Increase annealing factor of KLD gradually')

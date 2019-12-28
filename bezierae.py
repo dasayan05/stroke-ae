@@ -6,7 +6,8 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from bezierloss import BezierLoss
 
 class RNNBezierAE(nn.Module):
-    def __init__(self, n_input, n_hidden, n_layer, bezier_degree, dtype=torch.float32, bidirectional=True, variational=False):
+    def __init__(self, n_input, n_hidden, n_layer, bezier_degree, dtype=torch.float32, bidirectional=True,
+        variational=False, dropout=0.8):
         super().__init__()
 
         # Track parameters
@@ -17,9 +18,11 @@ class RNNBezierAE(nn.Module):
         self.bidirectional = 2 if bidirectional else 1
         self.dtype = dtype
         self.variational = variational
+        self.dropout = dropout
 
         # The t-network
-        self.tcell = self.tcell = nn.LSTM(self.n_input, self.n_hidden, self.n_layer, bidirectional=bidirectional)
+        self.tcell = self.tcell = nn.LSTM(self.n_input, self.n_hidden, self.n_layer,
+            bidirectional=bidirectional, dropout=self.dropout)
         self.t_logits = torch.nn.Linear(self.bidirectional * self.n_hidden, 1)
 
         # ...
