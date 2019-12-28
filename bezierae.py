@@ -13,7 +13,7 @@ class RNNBezierAE(nn.Module):
         self.n_input, self.n_hidden, self.n_layer = n_input, n_hidden, n_layer
         self.bezier_degree = bezier_degree
         self.n_latent_ctrl = (self.bezier_degree + 1) * 2
-        self.n_latent_ratw = self.bezier_degree + 1
+        self.n_latent_ratw = self.bezier_degree + 1 - 2
         self.bidirectional = 2 if bidirectional else 1
         self.dtype = dtype
         self.variational = variational
@@ -43,13 +43,18 @@ class RNNBezierAE(nn.Module):
         ts = self.constraint_t(t_logits)
 
         # latent space
-        H = torch.cat([h_final[0], h_final[1]], 1)
-        C = torch.cat([c_final[0], c_final[1]], 1)
+        h_final = h_final.view(self.n_layer, self.bidirectional, -1, self.n_hidden)
+        c_final = c_final.view(self.n_layer, self.bidirectional, -1, self.n_hidden)
+        H = torch.cat([h_final[-1, 0], h_final[-1, 1]], 1)
+        C = torch.cat([c_final[-1, 0], c_final[-1, 0]], 1)
         HC = torch.cat([H, C], 1) # concat all "states" of the LSTM
 
         hc_projection = F.relu(self.hc_project(HC))
         latent_ctrlpt = self.ctrlpt_arm(hc_projection).view(-1, self.n_latent_ctrl // 2, 2)
-        latent_ratw = torch.sigmoid(self.ratw_arm(hc_projection))
+        latent_ratw = self.ratw_arm(hc_projection)
+        z_ = torch.zeros((latent_ratw.shape[0], 1), device=latent_ratw.device)
+        latent_ratw = torch.cat([z_, latent_ratw, z_], 1)
+        latent_ratw = torch.sigmoid(latent_ratw)
         
         out, regu = [], []
         for t, p, r, l in zip(ts, latent_ctrlpt, latent_ratw, lens):
