@@ -39,7 +39,7 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
                 ctrlpt_ = normal.sample()
                 ratw_ = ratw.squeeze()
                                 
-                draw_bezier(ctrlpt_.view(-1,2).cpu().numpy(), ratw_.cpu().numpy(), annotate=False, draw_axis=ax[i, s + 1])
+                draw_bezier(ctrlpt_.cpu().numpy(), ratw_.cpu().numpy(), annotate=False, draw_axis=ax[i, s + 1])
             
         plt.xticks([]); plt.yticks([])
         plt.savefig(savefile)
