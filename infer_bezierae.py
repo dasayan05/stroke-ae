@@ -30,6 +30,7 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
                 normal = torch.distributions.Normal(ctrlpt.squeeze(), torch.zeros_like(ctrlpt.squeeze()))
             else:
                 ctrlpt_mu, ctrlpt_std, ratw = model(X, h_initial, c_initial)
+                ctrlpt_mu, ctrlpt_std = ctrlpt_mu.view(-1, bezier_degree + 1, 2), ctrlpt_std.view(-1, bezier_degree + 1, 2)
                 normal = torch.distributions.Normal(ctrlpt_mu.squeeze(), ctrlpt_std.squeeze())
 
             ax[i, 0].scatter(X_numpy[:, 0], X_numpy[:,1])

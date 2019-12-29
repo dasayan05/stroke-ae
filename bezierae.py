@@ -31,6 +31,8 @@ class RNNBezierAE(nn.Module):
         self.hc_project = nn.Linear(n_hc, n_project)
 
         self.ctrlpt_arm = nn.Linear(n_project, self.n_latent_ctrl)
+        if self.variational:
+            self.ctrlpt_logvar_arm = nn.Linear(n_project, self.n_latent_ctrl)
         self.ratw_arm = nn.Linear(n_project, self.n_latent_ratw)
 
         # Bezier mechanics
@@ -38,6 +40,11 @@ class RNNBezierAE(nn.Module):
 
     def constraint_t(self, t):
         return torch.cumsum(torch.softmax(t.squeeze(-1), 1), 1)
+
+    def reparam(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return (mu + eps * std)
 
     def forward(self, x, h_initial, c_initial):
         out, (h_final, c_final) = self.tcell(x, (h_initial, c_initial))
@@ -53,7 +60,18 @@ class RNNBezierAE(nn.Module):
         HC = torch.cat([H, C], 1) # concat all "states" of the LSTM
 
         hc_projection = F.relu(self.hc_project(HC))
-        latent_ctrlpt = self.ctrlpt_arm(hc_projection).view(-1, self.n_latent_ctrl // 2, 2)
+        latent_ctrlpt = self.ctrlpt_arm(hc_projection)
+
+        # variational
+        if self.variational:
+            latent_ctrlpt_mean = latent_ctrlpt
+            latent_ctrlpt_logvar = self.ctrlpt_logvar_arm(hc_projection)
+            latent_ctrlpt = self.reparam(latent_ctrlpt, latent_ctrlpt_logvar)
+
+            if self.training:
+                KLD = -0.5 * torch.mean(1 + latent_ctrlpt_logvar - latent_ctrlpt.pow(2) - latent_ctrlpt_logvar.exp())
+
+        latent_ctrlpt = latent_ctrlpt.view(-1, self.n_latent_ctrl // 2, 2)
         latent_ratw = self.ratw_arm(hc_projection)
         z_ = torch.zeros((latent_ratw.shape[0], 1), device=latent_ratw.device)
         latent_ratw = torch.cat([z_, latent_ratw, z_], 1)
@@ -68,9 +86,9 @@ class RNNBezierAE(nn.Module):
             if not self.variational:
                 return out, sum(regu) / len(regu)
             else:
-                pass
+                return out, sum(regu) / len(regu), KLD
         else:
             if not self.variational:
                 return latent_ctrlpt, latent_ratw
             else:
-                pass
+                return latent_ctrlpt_mean, torch.exp(0.5 * latent_ctrlpt_logvar), latent_ratw

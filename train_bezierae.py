@@ -55,8 +55,8 @@ def main( args ):
             
             if args.anneal_KLD:
                 # Annealing factor for KLD term
-                linear = lambda e, e0: min(e / float(e0), 1.)
-                anneal_factor = linear(e, 15)
+                linear = lambda e, e0, T: max(min((e - e0) / float(T), 1.), 0.)
+                anneal_factor = linear(e, 100, 50)
             else:
                 anneal_factor = 1.
 
@@ -75,7 +75,7 @@ def main( args ):
             REC_loss = REC_loss + regu * args.regp
 
             if args.variational:
-                KLD_loss = KLD * (args.bezier_degree * 2) * anneal_factor
+                KLD_loss = KLD * anneal_factor
             else:
                 KLD_loss = torch.tensor(0.)
 
@@ -87,7 +87,7 @@ def main( args ):
             
             if i % args.interval == 0:
                 count += 1
-                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {loss:.6f}')
+                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {REC_loss:.4f} + {KLD_loss:.4f}')
                 
                 if args.variational:
                     writer.add_scalar('train/loss/REC', REC_loss.item(), global_step=count)
