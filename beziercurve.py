@@ -7,7 +7,7 @@ def bij(t, i, n):
     # binomial coefficients
     return comb(n, i) * (t ** i) * ((1-t) ** (n-i))
 
-def draw_bezier(ctrlPoints, rWeights = None, nCtrlPoints = 0, nPointsCurve = 100, annotate = True, return_curve=False,
+def draw_bezier(ctrlPoints, rWeights = None, nCtrlPoints = 0, nPointsCurve = 100, start_xy = None, annotate = True, return_curve=False,
     ctrlPointPlotKwargs = dict(marker='X', color='r', linestyle='--'), curvePlotKwagrs = dict(color='g'),
     draw_axis = plt):
     '''
@@ -66,12 +66,17 @@ def draw_bezier(ctrlPoints, rWeights = None, nCtrlPoints = 0, nPointsCurve = 100
     if return_curve: # Return the points of the curve as 'np.array'
       return curve
 
+    if start_xy is not None:
+      curve = curve + start_xy
+      ctrlPoints = ctrlPoints + start_xy
+    
     # Plot the curve
     draw_axis.plot(ctrlPoints[:,0], ctrlPoints[:,1], **ctrlPointPlotKwargs)
     for n, ctrlPoint in enumerate(ctrlPoints):
       if annotate:
          draw_axis.annotate(str(n), (ctrlPoint[0], ctrlPoint[1]), color=ctrlPointPlotKwargs['color'])
 
+    
     draw_axis.plot(curve[:,0], curve[:,1], **curvePlotKwagrs)
     for n, curvePoint in enumerate(curve):
       if n % 10 == 0 and annotate:
