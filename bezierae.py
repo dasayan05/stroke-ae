@@ -92,3 +92,63 @@ class RNNBezierAE(nn.Module):
                 return latent_ctrlpt, latent_ratw
             else:
                 return latent_ctrlpt_mean, torch.exp(0.5 * latent_ctrlpt_logvar), latent_ratw
+
+class RNNSketchAE(nn.Module):
+    def __init__(self, n_inps, n_hidden, n_layer = 2, dropout = 0.8, eps = 1e-8):
+        super().__init__()
+
+        # Track parameters
+        self.n_ctrlpt, self.n_ratw, self.n_start = n_inps
+        self.n_hidden = n_hidden
+        self.n_layer = 2
+        self.n_hc = 2 * 2 * self.n_hidden
+        self.n_latent = self.n_hc // 4
+        self.dropout = dropout
+
+        self.eps = eps
+
+        # Layer definition
+        self.encoder = nn.LSTM(self.n_ctrlpt + self.n_ratw + self.n_start, self.n_hidden, self.n_layer,
+            bidirectional=True, batch_first=True, dropout=dropout)
+        self.decoder = nn.LSTM(self.n_ctrlpt + self.n_ratw + self.n_start, self.n_hidden, self.n_layer,
+            bidirectional=False, batch_first=True, dropout=dropout)
+
+        # Other transformations
+        self.hc_to_latent = nn.Linear(self.n_hc, self.n_latent) # encoder side
+        self.latent_to_h0_1 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
+        self.latent_to_c0_1 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
+        self.latent_to_h0_2 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
+        self.latent_to_c0_2 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
+        self.tanh = nn.Tanh()
+        
+        self.ctrlpt_arm = nn.Linear(self.n_hidden, self.n_ctrlpt)
+        self.ratw_arm = nn.Linear(self.n_hidden, self.n_ratw)
+        self.start_arm = nn.Linear(self.n_hidden, self.n_start)
+        self.stopbit_arm = nn.Linear(self.n_hidden, 1)
+    
+    def forward(self, initials, ctrlpt, ratw, start):
+        h_initial, c_initial = initials
+        input = torch.cat([ctrlpt, ratw, start], -1)
+        _, (hn, cn) = self.encoder(input, (h_initial, c_initial))
+        hn = hn.view(self.n_layer, 2, -1, self.n_hidden)
+        cn = cn.view(self.n_layer, 2, -1, self.n_hidden)
+        hn, cn = hn[-1,...], cn[-1,...] # only from the topmost layer
+        # breakpoint()
+
+        hc = torch.cat([hn[0], hn[1], cn[0], cn[1]], -1) # concat all of 'em
+        latent = self.hc_to_latent(hc)
+        #### encoder ends here ####
+
+        h01, c01 = self.latent_to_h0_1(latent), self.latent_to_c0_1(latent)
+        h02, c02 = self.latent_to_h0_2(latent), self.latent_to_c0_2(latent)
+        h0 = torch.tanh(torch.stack([h01, h02], 0))
+        c0 = torch.tanh(torch.stack([c01, c02], 0))
+
+        state, _ = self.decoder(input, (h0, c0))
+
+        out_ctrlpt = self.ctrlpt_arm(state)
+        out_ratw = torch.sigmoid(self.ratw_arm(state))
+        out_start = self.start_arm(state)
+        out_stopbit = torch.sigmoid(self.stopbit_arm(state))
+
+        return out_ctrlpt, out_ratw, out_start, out_stopbit
