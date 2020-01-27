@@ -32,14 +32,16 @@ class BezierLoss(nn.Module):
         return torch.tensor(bezier_matrix(d), dtype=torch.float32)
 
     def forward(self, P, R, XY, ts=None):
-        if ts is None:
-            ts = self._heuristic_ts(XY)
-
         # breakpoint()
-        C = torch.mm(self._T(ts, self.degree), torch.mm(self.M, torch.diag(R)))
-        C = C / C.sum(1).unsqueeze(1)
-        C = torch.mm(C, P)
+        if R is not None:
+            C = torch.mm(self._T(ts, self.degree), torch.mm(self.M, torch.diag(R)))
+            C = C / C.sum(1).unsqueeze(1)
+            C = torch.mm(C, P)
+        else:
+            C = torch.mm(self._T(ts, self.degree), torch.mm(self.M, P))
 
-        l = ((C - XY)**2).mean() + self.reg_weight_p * (self._consecutive_dist(P)**2).mean() + self.reg_weight_r * torch.mean(R)
-        
-        return l
+        if XY is None:
+            return C
+        else:
+            l = ((C - XY)**2).mean() + self.reg_weight_p * (self._consecutive_dist(P)**2).mean() + self.reg_weight_r * torch.mean(R)
+            return l
