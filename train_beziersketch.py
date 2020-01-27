@@ -127,6 +127,35 @@ def main( args ):
             loss.backward()
             optim.step()
 
+        # evaluation phase
+        model.eval()
+        avg_loss = 0.
+        for i, B in enumerate(qdltest):
+            with torch.no_grad():
+                ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+
+            out_ctrlpts, out_ratws, out_starts, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
+
+            loss = []
+            for c_, r_, s_, b_, c, r, s, b, l in zip(out_ctrlpts, out_ratws, out_starts, out_stopbits,
+                                                         ctrlpts,     ratws,     starts,     stopbits, n_strokes):
+                if l >= 2:
+
+                    c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
+                    c_, r_, s_, b_ = c_[:l.item()-1, ...], r_[:l.item()-1, ...], s_[:l.item()-1, ...], b_[:l.item()-1, ...]
+
+                    loss.append( ((c - c_) ** 2).mean() + ((r - r_) ** 2).mean() + ((s - s_) ** 2).mean() + ((b - b_) ** 2).mean() )
+
+            loss = sum(loss) / len(loss)
+
+            avg_loss = ((avg_loss * i) + loss.item()) / (i + 1)
+
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            print(f'[Testing: -/{e}/{args.epochs}] -> Loss: {avg_loss:.4f}')
+            torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
+            writer.add_scalar('test-loss', avg_loss, global_step=e)
+
 
 if __name__ == '__main__':
     import argparse
@@ -155,7 +184,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
-    parser.add_argument('-i', '--interval', type=int, required=False, default=10, help='logging interval')
+    parser.add_argument('-i', '--interval', type=int, required=False, default=50, help='logging interval')
     # parser.add_argument('--nsample', type=int, required=False, default=6, help='no. of data samples for inference')
     # parser.add_argument('--rsample', type=int, required=False, default=6, help='no. of distribution samples for inference')
     args = parser.parse_args()
