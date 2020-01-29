@@ -73,16 +73,15 @@ class RNNBezierAE(nn.Module):
 
         latent_ctrlpt = latent_ctrlpt.view(-1, self.n_latent_ctrl // 2, 2)
         latent_ratw = self.ratw_arm(hc_projection)
-        z_ = torch.zeros((latent_ratw.shape[0], 1), device=latent_ratw.device)
-        latent_ratw = torch.cat([z_, latent_ratw, z_], 1)
-        latent_ratw = torch.sigmoid(latent_ratw)
-        
-        out, regu = [], []
-        for t, p, r, l in zip(ts, latent_ctrlpt, latent_ratw, lens):
-            out.append( self.bezierloss(p, r, None, ts=t[:l]) )
-            regu.append( (self.bezierloss._consecutive_dist(p)**2).mean() )
+        z_ = torch.ones((latent_ratw.shape[0], 1), device=latent_ratw.device) * 5. # sigmoid(5.) is close to 1
+        latent_ratw_padded = torch.cat([z_, latent_ratw, z_], 1)
         
         if self.training:
+            out, regu = [], []
+            for t, p, r, l in zip(ts, latent_ctrlpt, torch.sigmoid(latent_ratw_padded), lens):
+                out.append( self.bezierloss(p, r, None, ts=t[:l]) )
+                regu.append( (self.bezierloss._consecutive_dist(p)**2).mean() )
+            
             if not self.variational:
                 return out, sum(regu) / len(regu)
             else:

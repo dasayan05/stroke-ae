@@ -39,7 +39,10 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
             for s in range(rsamples):
                 ctrlpt_ = normal.sample()
                 ratw_ = ratw.squeeze()
-                                
+                
+                ratw_ = torch.cat([torch.tensor([5.,], device=ratw_.device), ratw_, torch.tensor([5.,], device=ratw_.device)], 0)
+                ratw_ = torch.sigmoid(ratw_)
+
                 draw_bezier(ctrlpt_.cpu().numpy(), ratw_.cpu().numpy(), annotate=False, draw_axis=ax[i, s + 1])
             
         plt.xticks([]); plt.yticks([])
