@@ -154,7 +154,7 @@ class RNNSketchAE(nn.Module):
             return out_ctrlpt, out_ratw, out_start, out_stopbit
         else:
             # as of now, teacher-frocing even in testing
-            return out_ctrlpt, out_ratw, out_start
+            return out_ctrlpt, out_ratw, out_start, out_stopbit
             
             # L = input.shape[1]
             # input = input[:,0,:].unsqueeze(1)

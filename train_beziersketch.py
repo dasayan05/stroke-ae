@@ -57,17 +57,15 @@ def main( args ):
             for c_, r_, s_, b_, c, r, s, b, l in zip(out_ctrlpts, out_ratws, out_starts, out_stopbits,
                                                          ctrlpts,     ratws,     starts,     stopbits, n_strokes):
                 if l >= 2:
-                    c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], \
-                                 b[1:, ...] # stop bit is special; read SketchRNN
-                    c_, r_, s_, b_ = c_[:l.item()-1, ...], r_[:l.item()-1, ...], s_[:l.item()-1, ...], \
-                                     b_[:-1, ...] # stop bit is special; read SketchRNN
+                    c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
+                    c_, r_, s_, b_ = c_[:l.item()-1, ...], r_[:l.item()-1, ...], s_[:l.item()-1, ...], b_[:l.item()-1, ...]
 
-                    loss.append( (((c - c_) ** 2).sum() + \
-                                 ((r - r_) ** 2).sum() + \
-                                 ((s - s_) ** 2).sum() + \
-                                 (-b*torch.log(b_)).sum()) )
+                    loss.append( (((c - c_) ** 2).sum(1).mean() + \
+                                 ((r - r_) ** 2).sum(1).mean() + \
+                                 ((s - s_) ** 2).sum(1).mean() + \
+                                 (-b*torch.log(b_)).mean()) )
 
-            loss = sum(loss) / (len(loss) * n_strokes.max())
+            loss = sum(loss) / len(loss)
 
             if i % args.interval == 0:
                 print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {loss:.4f}')

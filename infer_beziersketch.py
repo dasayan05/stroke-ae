@@ -75,7 +75,7 @@ def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, nsampl
                     break
                 
                 n_stroke = n_strokes[i]
-                out_ctrlpts, out_ratws, out_starts = model((h_initial, c_initial),
+                out_ctrlpts, out_ratws, out_starts, _ = model((h_initial, c_initial),
                     ctrlpts[i,:n_stroke,:].unsqueeze(0), ratws[i,:n_stroke,:].unsqueeze(0), starts[i,:n_stroke,:].unsqueeze(0))
 
                 drawsketch(ctrlpts[i,:n_stroke,:], ratws[i,:n_stroke,:], starts[i,:n_stroke,:], n_stroke, ax[i, 0])
