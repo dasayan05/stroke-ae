@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
 
 from bezierloss import BezierLoss
 
@@ -102,7 +102,7 @@ class RNNSketchAE(nn.Module):
         self.n_hidden = n_hidden
         self.n_layer = 2
         self.n_hc = 2 * 2 * self.n_hidden
-        self.n_latent = self.n_hc // 4
+        self.n_latent = self.n_hc // 2
         self.dropout = dropout
 
         self.eps = eps
@@ -133,7 +133,6 @@ class RNNSketchAE(nn.Module):
         hn = hn.view(self.n_layer, 2, -1, self.n_hidden)
         cn = cn.view(self.n_layer, 2, -1, self.n_hidden)
         hn, cn = hn[-1,...], cn[-1,...] # only from the topmost layer
-        # breakpoint()
 
         hc = torch.cat([hn[0], hn[1], cn[0], cn[1]], -1) # concat all of 'em
         latent = self.hc_to_latent(hc)
@@ -141,8 +140,8 @@ class RNNSketchAE(nn.Module):
 
         h01, c01 = self.latent_to_h0_1(latent), self.latent_to_c0_1(latent)
         h02, c02 = self.latent_to_h0_2(latent), self.latent_to_c0_2(latent)
-        h0 = torch.tanh(torch.stack([h01, h02], 0))
-        c0 = torch.tanh(torch.stack([c01, c02], 0))
+        h0 = self.tanh(torch.stack([h01, h02], 0))
+        c0 = self.tanh(torch.stack([c01, c02], 0))
 
         state, _ = self.decoder(input, (h0, c0))
 
@@ -151,4 +150,33 @@ class RNNSketchAE(nn.Module):
         out_start = self.start_arm(state)
         out_stopbit = torch.sigmoid(self.stopbit_arm(state))
 
-        return out_ctrlpt, out_ratw, out_start, out_stopbit
+        if self.training:
+            return out_ctrlpt, out_ratw, out_start, out_stopbit
+        else:
+            # as of now, teacher-frocing even in testing
+            return out_ctrlpt, out_ratw, out_start
+            
+            # L = input.shape[1]
+            # input = input[:,0,:].unsqueeze(1)
+            # stop = False
+
+            # out_ctrlpt, out_ratw, out_start = [], [], []
+            # for _ in range(L + 5):
+            #     state, (h1, c1) = self.decoder(input, (h0, c0))
+                
+            #     ctrlpt = self.ctrlpt_arm(state)
+            #     ratw = torch.sigmoid(self.ratw_arm(state))
+            #     start = self.start_arm(state)
+            #     stopbit = torch.sigmoid(self.stopbit_arm(state))
+                
+            #     out_ctrlpt.append(ctrlpt)
+            #     out_ratw.append(ratw)
+            #     out_start.append(start)
+
+            #     input = torch.cat([ctrlpt, ratw, start], -1)
+            #     h0, c0 = h1, c1
+
+            #     if stopbit.item() >= 0.99:
+            #         break
+
+            # return torch.cat(out_ctrlpt, 1), torch.cat(out_ratw, 1), torch.cat(out_start, 1)
