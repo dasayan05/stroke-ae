@@ -145,7 +145,7 @@ class RNNSketchAE(nn.Module):
         state, _ = self.decoder(input, (h0, c0))
 
         out_ctrlpt = self.ctrlpt_arm(state)
-        out_ratw = torch.sigmoid(self.ratw_arm(state))
+        out_ratw = self.ratw_arm(state)
         out_start = self.start_arm(state)
         out_stopbit = torch.sigmoid(self.stopbit_arm(state))
 

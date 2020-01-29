@@ -31,8 +31,8 @@ def main( args ):
     embedder.eval()
 
     # RNN Sketch model
-    n_ratw = args.bezier_degree + 1
-    n_ctrlpt = n_ratw * 2
+    n_ratw = args.bezier_degree + 1 - 2
+    n_ctrlpt = (args.bezier_degree + 1) * 2
     model = RNNSketchAE((n_ctrlpt, n_ratw, 2), args.hidden, dropout=args.dropout)
     
     h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
@@ -50,7 +50,7 @@ def main( args ):
         for i, B in enumerate(qdltrain):
             with torch.no_grad():
                 ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
-
+            
             out_ctrlpts, out_ratws, out_starts, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
 
             loss = []
@@ -59,7 +59,6 @@ def main( args ):
                 if l >= 2:
                     c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
                     c_, r_, s_, b_ = c_[:l.item()-1, ...], r_[:l.item()-1, ...], s_[:l.item()-1, ...], b_[:l.item()-1, ...]
-
                     loss.append( (((c - c_) ** 2).sum(1).mean() + \
                                  ((r - r_) ** 2).sum(1).mean() + \
                                  ((s - s_) ** 2).sum(1).mean() + \
@@ -82,7 +81,7 @@ def main( args ):
         for i, B in enumerate(qdltest):
             with torch.no_grad():
                 ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
-
+            
             out_ctrlpts, out_ratws, out_starts, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
 
             loss = []
@@ -91,7 +90,6 @@ def main( args ):
                 if l >= 2:
                     c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
                     c_, r_, s_, b_ = c_[:l.item()-1, ...], r_[:l.item()-1, ...], s_[:l.item()-1, ...], b_[:l.item()-1, ...]
-
                     loss.append( (((c - c_) ** 2).sum(1).mean() + \
                                  ((r - r_) ** 2).sum(1).mean() + \
                                  ((s - s_) ** 2).sum(1).mean() + \
