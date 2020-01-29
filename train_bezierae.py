@@ -16,7 +16,8 @@ def length_gt(s, f):
 def main( args ):
     chosen_classes = [ 'cat', 'chair', 'face' , 'firetruck', 'mosquito', 'owl', 'pig', 'purse', 'shoe' ]
     
-    qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], raw=args.raw, max_sketches_each_cat=8000, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
+    qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], raw=args.raw,
+        max_sketches_each_cat=args.max_sketches_each_cat, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
     
     qds_infer = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], filter_func=lambda s: length_gt(s, 5),
@@ -115,6 +116,7 @@ if __name__ == '__main__':
     parser.add_argument('--base', type=str, required=False, default='.', help='base folder of operation (needed for condor)')
     parser.add_argument('--n_classes', '-c', type=int, required=False, default=3, help='no. of classes')
     parser.add_argument('--raw', action='store_true', help='Use raw QuickDraw data')
+    parser.add_argument('--max_sketches_each_cat', '-n', type=int, required=False, default=25000, help='Max no. of sketches each category')
 
     parser.add_argument('-V', '--variational', action='store_true', help='Impose prior on latent space')
     parser.add_argument('--hidden', type=int, required=False, default=16, help='no. of hidden neurons')
