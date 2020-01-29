@@ -76,7 +76,7 @@ def main( args ):
             REC_loss = REC_loss + regu * args.regp
 
             if args.variational:
-                KLD_loss = KLD * anneal_factor
+                KLD_loss = KLD * anneal_factor * args.varw
             else:
                 KLD_loss = torch.tensor(0.)
 
@@ -127,9 +127,10 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, required=False, default=0.8, help='Dropout rate')
     parser.add_argument('--lr', type=float, required=False, default=1e-4, help='learning rate')
     parser.add_argument('-e', '--epochs', type=int, required=False, default=40, help='no of epochs')
+    parser.add_argument('--varw', type=float, required=False, default=1., help='Constant multiplier of the KLD term')
     parser.add_argument('--anneal_KLD', action='store_true', help='Increase annealing factor of KLD gradually')
     parser.add_argument('--regp', type=float, required=False, default=1e-2, help='Regularizer weight on control points')
-    
+
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('-i', '--interval', type=int, required=False, default=100, help='logging interval')
