@@ -20,7 +20,7 @@ def drawsketch(ctrlpts, ratws, st_starts, n_stroke, draw_axis=plt.gca()):
             ctrlPointPlotKwargs=dict(marker='X', color='red', linestyle='--', alpha=0.4))
     draw_axis.invert_yaxis()
 
-def stroke_embed(batch, initials, embedder, viz = False):
+def stroke_embed(batch, initials, embedder, variational=False):
     h_initial, c_initial = initials
     # Redundant, but thats fine
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -36,7 +36,11 @@ def stroke_embed(batch, initials, embedder, viz = False):
         ls = [st.shape[0] for st in sk]
         sk = pad_sequence(sk, batch_first=True)
         sk = pack_padded_sequence(sk, ls, batch_first=True, enforce_sorted=False)
-        emb_ctrlpt, emb_ratw = embedder(sk, h_initial, c_initial)
+        if not variational:
+            emb_ctrlpt, emb_ratw = embedder(sk, h_initial, c_initial)
+        else:
+            emb_ctrlpt, _, emb_ratw = embedder(sk, h_initial, c_initial)
+        
         sketches_ctrlpt.append(emb_ctrlpt.view(len(ls), -1))
         sketches_ratw.append(emb_ratw)
         sketches_st_starts.append(st_starts)
