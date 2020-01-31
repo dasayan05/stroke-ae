@@ -53,7 +53,6 @@ class RNNBezierAE(nn.Module):
         out, (h_final, c_final) = self.tcell(x, (h_initial, c_initial))
         hns, lens = pad_packed_sequence(out, batch_first=True)
         t_logits = self.t_logits(hns)
-        breakpoint()
         if self.stochastic_t:
             t_logits_std = torch.sigmoid(self.t_logits_std(hns))
             t_normal = torch.distributions.Normal(t_logits, t_logits_std)
