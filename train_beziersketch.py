@@ -9,7 +9,8 @@ from infer_beziersketch import inference, drawsketch, stroke_embed
 def main( args ):
     chosen_classes = [ 'cat', 'chair', 'mosquito', 'firetruck', 'owl', 'pig', 'face', 'purse', 'shoe' ]
 
-    qd = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=args.max_sketches_each_cat, verbose=True, normalize_xy=True, start_from_zero=False, mode=QuickDraw.STROKESET, raw=args.raw)
+    qd = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=args.max_sketches_each_cat,
+        verbose=True, normalize_xy=True, start_from_zero=False, mode=QuickDraw.STROKESET, raw=args.raw, npz=args.npz)
     
     qdtrain, qdtest = qd.split(0.8)
     qdltrain, qdltest = qdtrain.get_dataloader(args.batch_size), qdtest.get_dataloader(args.batch_size)
@@ -51,6 +52,12 @@ def main( args ):
             with torch.no_grad():
                 ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
             
+            # for b in range(ctrlpts.shape[0]):
+            #     fig = plt.figure()
+            #     drawsketch(ctrlpts[b], ratws[b], starts[b], n_strokes[b], draw_axis=plt.gca())
+            #     plt.savefig(f'junks/{e}_{i}_{b}.png')
+            #     plt.close()
+
             out_ctrlpts, out_ratws, out_starts, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
 
             loss = []
@@ -119,6 +126,7 @@ if __name__ == '__main__':
     parser.add_argument('--base', type=str, required=False, default='.', help='base folder of operation (needed for condor)')
     parser.add_argument('--n_classes', '-c', type=int, required=False, default=3, help='no. of classes')
     parser.add_argument('--raw', action='store_true', help='Use raw QuickDraw data')
+    parser.add_argument('--npz', action='store_true', help='Use .npz QuickDraw data')
     parser.add_argument('--max_sketches_each_cat', '-n', type=int, required=False, default=25000, help='Max no. of sketches each category')
 
     parser.add_argument('--embvariational', action='store_true', help='Impose prior on latent space (in embedder)')
