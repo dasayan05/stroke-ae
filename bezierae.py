@@ -7,7 +7,7 @@ from bezierloss import BezierLoss
 
 class RNNBezierAE(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, bezier_degree, dtype=torch.float32, bidirectional=True,
-        variational=False, dropout=0.8):
+        variational=False, dropout=0.8, stochastic_t=False):
         super().__init__()
 
         # Track parameters
@@ -19,11 +19,14 @@ class RNNBezierAE(nn.Module):
         self.dtype = dtype
         self.variational = variational
         self.dropout = dropout
+        self.stochastic_t = stochastic_t
 
         # The t-network
         self.tcell = self.tcell = nn.LSTM(self.n_input, self.n_hidden, self.n_layer,
             bidirectional=bidirectional, dropout=self.dropout)
         self.t_logits = torch.nn.Linear(self.bidirectional * self.n_hidden, 1)
+        if self.stochastic_t:
+            self.t_logits_std = torch.nn.Linear(self.bidirectional * self.n_hidden, 1)
 
         # ...
         n_hc = 2 * self.bidirectional * self.n_hidden
@@ -50,6 +53,12 @@ class RNNBezierAE(nn.Module):
         out, (h_final, c_final) = self.tcell(x, (h_initial, c_initial))
         hns, lens = pad_packed_sequence(out, batch_first=True)
         t_logits = self.t_logits(hns)
+        breakpoint()
+        if self.stochastic_t:
+            t_logits_std = torch.sigmoid(self.t_logits_std(hns))
+            t_normal = torch.distributions.Normal(t_logits, t_logits_std)
+            t_logits = t_normal.rsample()
+
         ts = self.constraint_t(t_logits)
 
         # latent space

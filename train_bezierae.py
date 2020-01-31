@@ -27,7 +27,7 @@ def main( args ):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     model = RNNBezierAE(2, args.hidden, args.layers, args.bezier_degree, bidirectional=True,
-        variational=args.variational, dropout=args.dropout)
+        variational=args.variational, dropout=args.dropout, stochastic_t=args.stochastic_t)
     
     model = model.float()
     if torch.cuda.is_available():
@@ -119,6 +119,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_sketches_each_cat', '-n', type=int, required=False, default=25000, help='Max no. of sketches each category')
 
     parser.add_argument('-V', '--variational', action='store_true', help='Impose prior on latent space')
+    parser.add_argument('-T', '--stochastic_t', action='store_true', help='Use stochastic t-values')
     parser.add_argument('--hidden', type=int, required=False, default=16, help='no. of hidden neurons')
     parser.add_argument('--layers', type=int, required=False, default=1, help='no of layers in encoder RNN')
     parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=5, help='degree of the bezier')
