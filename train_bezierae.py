@@ -15,6 +15,8 @@ def length_gt(s, f):
 
 def main( args ):
     chosen_classes = [ 'cat', 'chair', 'face' , 'firetruck', 'mosquito', 'owl', 'pig', 'purse', 'shoe' ]
+    if args.iam:
+        chosen_classes = ['iam']
     
     qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], raw=args.raw, npz=args.npz,
         max_sketches_each_cat=args.max_sketches_each_cat, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
@@ -113,6 +115,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--root', type=str, required=True, help='quickdraw binary file')
+    parser.add_argument('--iam', action='store_true', help='Use IAM dataset')
     parser.add_argument('--base', type=str, required=False, default='.', help='base folder of operation (needed for condor)')
     parser.add_argument('--n_classes', '-c', type=int, required=False, default=3, help='no. of classes')
     parser.add_argument('--raw', action='store_true', help='Use raw QuickDraw data')
