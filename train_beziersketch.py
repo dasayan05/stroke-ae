@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import torch, os, numpy as np
+from torch.distributions import Normal
 from torch.utils import tensorboard as tb
 
 from quickdraw.quickdraw import QuickDraw
@@ -19,7 +20,8 @@ def main( args ):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     # Embedder model (pretrained and freezed)
-    embedder = RNNBezierAE(2, args.embhidden, args.emblayers, args.bezier_degree, bidirectional=True, variational=args.embvariational)
+    embedder = RNNBezierAE(2, args.embhidden, args.emblayers, args.bezier_degree, bidirectional=True,
+        variational=args.embvariational, stochastic_t=args.stochastic_t)
     embmodel = os.path.join(args.base, args.embmodel)
     if os.path.exists(embmodel):
         embedder.load_state_dict(torch.load(embmodel))
@@ -52,11 +54,21 @@ def main( args ):
             with torch.no_grad():
                 ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
             
-            # for b in range(ctrlpts.shape[0]):
-            #     fig = plt.figure()
-            #     drawsketch(ctrlpts[b], ratws[b], starts[b], n_strokes[b], draw_axis=plt.gca())
-            #     plt.savefig(f'junks/{e}_{i}_{b}.png')
-            #     plt.close()
+            if args.rendersketch:
+                fig, ax = plt.subplots(5, 5, figsize=(20, 20))
+                for b in range(ctrlpts.shape[0]):
+                    if b > 4:
+                        break
+                    drawsketch(ctrlpts[b], ratws[b], starts[b], n_strokes[b], draw_axis=ax[b, 0])
+                    ax[b, 0].invert_yaxis()
+                    for j in range(1, 5):
+                        cdist = Normal(ctrlpts[b], torch.ones_like(ctrlpts[b]) * 0.01)
+                        rdist = Normal(ratws[b], torch.ones_like(ratws[b]) * 0.01)
+                        sdist = Normal(starts[b], torch.ones_like(starts[b]) * 0.01)
+                        drawsketch(cdist.sample(), rdist.sample(), sdist.sample(), n_strokes[b], draw_axis=ax[b, j])
+                        ax[b, j].invert_yaxis()
+                plt.savefig(f'junks/{e}_{i}.png')
+                plt.close()
 
             out_ctrlpts, out_ratws, out_starts, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
 
@@ -133,6 +145,7 @@ if __name__ == '__main__':
     parser.add_argument('--embhidden', type=int, required=False, default=16, help='no. of hidden neurons (in embedder)')
     parser.add_argument('--emblayers', type=int, required=False, default=1, help='no of layers (in embedder)')
     parser.add_argument('--embmodel', type=str, required=True, help='path to the pre-trained embedder')
+    parser.add_argument('-T', '--stochastic_t', action='store_true', help='Use stochastic t-values')
     parser.add_argument('--hidden', type=int, required=False, default=256, help='no. of hidden neurons')
     parser.add_argument('--layers', type=int, required=False, default=2, help='no of layers in encoder RNN')
     parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=5, help='degree of the bezier')
@@ -144,6 +157,7 @@ if __name__ == '__main__':
     # parser.add_argument('--anneal_KLD', action='store_true', help='Increase annealing factor of KLD gradually')
     
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')
+    parser.add_argument('--rendersketch', action='store_true', help='Render the sketches (debugging purpose)')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('-i', '--interval', type=int, required=False, default=50, help='logging interval')
     parser.add_argument('--nsamples', type=int, required=False, default=2, help='no. of data samples for inference')
