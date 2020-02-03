@@ -9,6 +9,8 @@ from infer_beziersketch import inference, drawsketch, stroke_embed
 
 def main( args ):
     chosen_classes = [ 'cat', 'chair', 'mosquito', 'firetruck', 'owl', 'pig', 'face', 'purse', 'shoe' ]
+    if args.iam:
+        chosen_classes = ['iam']
 
     qd = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], max_sketches_each_cat=args.max_sketches_each_cat,
         verbose=True, normalize_xy=True, start_from_zero=False, mode=QuickDraw.STROKESET, raw=args.raw, npz=args.npz)
@@ -133,6 +135,7 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=str, required=True, help='quickdraw binary file')
     parser.add_argument('--base', type=str, required=False, default='.', help='base folder of operation (needed for condor)')
     parser.add_argument('--n_classes', '-c', type=int, required=False, default=3, help='no. of classes')
+    parser.add_argument('--iam', action='store_true', help='Use IAM dataset')
     parser.add_argument('--raw', action='store_true', help='Use raw QuickDraw data')
     parser.add_argument('--npz', action='store_true', help='Use .npz QuickDraw data')
     parser.add_argument('--max_sketches_each_cat', '-n', type=int, required=False, default=25000, help='Max no. of sketches each category')
