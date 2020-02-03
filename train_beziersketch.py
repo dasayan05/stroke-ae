@@ -4,7 +4,7 @@ from torch.distributions import Normal
 from torch.utils import tensorboard as tb
 
 from quickdraw.quickdraw import QuickDraw
-from bezierae import RNNBezierAE, RNNSketchAE
+from bezierae import RNNBezierAE, RNNSketchAE, gmm_loss
 from infer_beziersketch import inference, drawsketch, stroke_embed
 
 def main( args ):
@@ -36,7 +36,7 @@ def main( args ):
     # RNN Sketch model
     n_ratw = args.bezier_degree + 1 - 2
     n_ctrlpt = (args.bezier_degree + 1) * 2
-    model = RNNSketchAE((n_ctrlpt, n_ratw, 2), args.hidden, dropout=args.dropout)
+    model = RNNSketchAE((n_ctrlpt, n_ratw, 2), args.hidden, dropout=args.dropout, n_mixture=args.n_mix)
     
     h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
     c_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
@@ -70,18 +70,16 @@ def main( args ):
                 plt.savefig(f'junks/{e}_{i}.png')
                 plt.close()
 
-            out_ctrlpts, out_ratws, out_starts, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
+            out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
 
             loss = []
-            for c_, r_, s_, b_, c, r, s, b, l in zip(out_ctrlpts, out_ratws, out_starts, out_stopbits,
+            for mu_, std_, mix_, b_, c, r, s, b, l in zip(out_param_mu, out_param_std, out_param_mix, out_stopbits,
                                                          ctrlpts,     ratws,     starts,     stopbits, n_strokes):
                 if l >= 2:
                     c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
-                    c_, r_, s_, b_ = c_[:l.item()-1, ...], r_[:l.item()-1, ...], s_[:l.item()-1, ...], b_[:l.item()-1, ...]
-                    loss.append( (((c - c_) ** 2).sum(1).mean() + \
-                                 ((r - r_) ** 2).sum(1).mean() + \
-                                 ((s - s_) ** 2).sum(1).mean() + \
-                                 (-b*torch.log(b_)).mean()) )
+                    mu_, std_, mix_, b_ = mu_[:l.item()-1, ...], std_[:l.item()-1, ...], mix_[:l.item()-1, ...], b_[:l.item()-1, ...]
+                    gmml = gmm_loss(mu_, std_, mix_, args.n_mix, c, r, s)
+                    loss.append( gmml + (-b*torch.log(b_)).mean())
 
             loss = sum(loss) / len(loss)
 
@@ -101,18 +99,16 @@ def main( args ):
             with torch.no_grad():
                 ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
             
-            out_ctrlpts, out_ratws, out_starts, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
+            out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
 
             loss = []
-            for c_, r_, s_, b_, c, r, s, b, l in zip(out_ctrlpts, out_ratws, out_starts, out_stopbits,
+            for mu_, std_, mix_, b_, c, r, s, b, l in zip(out_param_mu, out_param_std, out_param_mix, out_stopbits,
                                                          ctrlpts,     ratws,     starts,     stopbits, n_strokes):
                 if l >= 2:
                     c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
-                    c_, r_, s_, b_ = c_[:l.item()-1, ...], r_[:l.item()-1, ...], s_[:l.item()-1, ...], b_[:l.item()-1, ...]
-                    loss.append( (((c - c_) ** 2).sum(1).mean() + \
-                                 ((r - r_) ** 2).sum(1).mean() + \
-                                 ((s - s_) ** 2).sum(1).mean() + \
-                                 (-b*torch.log(b_)).mean()) )
+                    mu_, std_, mix_, b_ = mu_[:l.item()-1, ...], std_[:l.item()-1, ...], mix_[:l.item()-1, ...], b_[:l.item()-1, ...]
+                    gmml = gmm_loss(mu_, std_, mix_, args.n_mix, c, r, s)
+                    loss.append( gmml + (-b*torch.log(b_)).mean())
 
             loss = sum(loss) / len(loss)
 
@@ -124,10 +120,10 @@ def main( args ):
             torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
             writer.add_scalar('test-loss', avg_loss, global_step=e)
             
-        savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
-        inference(qdtest.get_dataloader(args.batch_size), model, embedder, emblayers=args.emblayers, embhidden=args.embhidden,
-            layers=args.layers, hidden=args.hidden, variational=False, bezier_degree=args.bezier_degree,
-            nsamples=args.nsamples, rsamples=args.rsamples, savefile=savefile)
+        # savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
+        # inference(qdtest.get_dataloader(args.batch_size), model, embedder, emblayers=args.emblayers, embhidden=args.embhidden,
+        #     layers=args.layers, hidden=args.hidden, variational=False, bezier_degree=args.bezier_degree,
+        #     nsamples=args.nsamples, rsamples=args.rsamples, savefile=savefile)
 
 
 if __name__ == '__main__':
@@ -147,6 +143,7 @@ if __name__ == '__main__':
     parser.add_argument('--embmodel', type=str, required=True, help='path to the pre-trained embedder')
     parser.add_argument('-T', '--stochastic_t', action='store_true', help='Use stochastic t-values')
     parser.add_argument('--hidden', type=int, required=False, default=256, help='no. of hidden neurons')
+    parser.add_argument('-x', '--n_mix', type=int, required=False, default=3, help='no. of GMM mixtures')
     parser.add_argument('--layers', type=int, required=False, default=2, help='no of layers in encoder RNN')
     parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=5, help='degree of the bezier')
     

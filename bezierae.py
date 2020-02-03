@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.distributions as dist
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
 
 from bezierloss import BezierLoss
@@ -101,7 +102,7 @@ class RNNBezierAE(nn.Module):
                 return latent_ctrlpt_mean, torch.exp(0.5 * latent_ctrlpt_logvar), latent_ratw
 
 class RNNSketchAE(nn.Module):
-    def __init__(self, n_inps, n_hidden, n_layer = 2, dropout = 0.8, eps = 1e-8):
+    def __init__(self, n_inps, n_hidden, n_layer = 2, n_mixture = 3, dropout = 0.8, eps = 1e-8):
         super().__init__()
 
         # Track parameters
@@ -111,14 +112,14 @@ class RNNSketchAE(nn.Module):
         self.n_hc = 2 * 2 * self.n_hidden
         self.n_latent = self.n_hc // 2
         self.dropout = dropout
+        self.n_params = self.n_ctrlpt + self.n_ratw + self.n_start
+        self.n_mixture = n_mixture
 
         self.eps = eps
 
         # Layer definition
-        self.encoder = nn.LSTM(self.n_ctrlpt + self.n_ratw + self.n_start, self.n_hidden, self.n_layer,
-            bidirectional=True, batch_first=True, dropout=dropout)
-        self.decoder = nn.LSTM(self.n_ctrlpt + self.n_ratw + self.n_start, self.n_hidden, self.n_layer,
-            bidirectional=False, batch_first=True, dropout=dropout)
+        self.encoder = nn.LSTM(self.n_params, self.n_hidden, self.n_layer, bidirectional=True, batch_first=True, dropout=dropout)
+        self.decoder = nn.LSTM(self.n_params, self.n_hidden, self.n_layer, bidirectional=False, batch_first=True, dropout=dropout)
 
         # Other transformations
         self.hc_to_latent = nn.Linear(self.n_hc, self.n_latent) # encoder side
@@ -128,9 +129,12 @@ class RNNSketchAE(nn.Module):
         self.latent_to_c0_2 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
         self.tanh = nn.Tanh()
         
-        self.ctrlpt_arm = nn.Linear(self.n_hidden, self.n_ctrlpt)
-        self.ratw_arm = nn.Linear(self.n_hidden, self.n_ratw)
-        self.start_arm = nn.Linear(self.n_hidden, self.n_start)
+        # self.ctrlpt_arm = nn.Linear(self.n_hidden, self.n_ctrlpt)
+        # self.ratw_arm = nn.Linear(self.n_hidden, self.n_ratw)
+        # self.start_arm = nn.Linear(self.n_hidden, self.n_start)
+        self.param_mu_arm = nn.Linear(self.n_hidden, self.n_params * self.n_mixture)
+        self.param_std_arm = nn.Linear(self.n_hidden, self.n_params * self.n_mixture) # put through exp()
+        self.param_mix_arm = nn.Linear(self.n_hidden, self.n_mixture) # put through softmax
         self.stopbit_arm = nn.Linear(self.n_hidden, 1)
     
     def forward(self, initials, ctrlpt, ratw, start):
@@ -152,16 +156,19 @@ class RNNSketchAE(nn.Module):
 
         state, _ = self.decoder(input, (h0, c0))
 
-        out_ctrlpt = self.ctrlpt_arm(state)
-        out_ratw = self.ratw_arm(state)
-        out_start = self.start_arm(state)
+        # out_ctrlpt = self.ctrlpt_arm(state)
+        # out_ratw = self.ratw_arm(state)
+        # out_start = self.start_arm(state)
+        out_param_mu = self.param_mu_arm(state)
+        out_param_std = torch.exp(self.param_std_arm(state))
+        out_param_mix = torch.softmax(self.param_mix_arm(state), -1)
         out_stopbit = torch.sigmoid(self.stopbit_arm(state))
 
         if self.training:
-            return out_ctrlpt, out_ratw, out_start, out_stopbit
+            return out_param_mu, out_param_std, out_param_mix, out_stopbit
         else:
             # as of now, teacher-frocing even in testing
-            return out_ctrlpt, out_ratw, out_start, out_stopbit
+            return out_param_mu, out_param_std, out_param_mix, out_stopbit
             
             # L = input.shape[1]
             # input = input[:,0,:].unsqueeze(1)
@@ -187,3 +194,14 @@ class RNNSketchAE(nn.Module):
             #         break
 
             # return torch.cat(out_ctrlpt, 1), torch.cat(out_ratw, 1), torch.cat(out_start, 1)
+
+def gmm_loss(mu, std, mix, n_mix, ctrlpt, ratw, start):
+    param = torch.cat([ctrlpt, ratw, start], -1)
+    mus = torch.split(mu, mu.shape[-1]//n_mix, -1)
+    stds = torch.split(std, std.shape[-1]//n_mix, -1)
+    mixs = torch.split(mix, mix.shape[-1]//n_mix, -1)
+    Ns = [dist.Normal(m, s) for m, s in zip(mus, stds)]
+    pdfs = []
+    for N, pi in zip(Ns, mixs):
+        pdfs.append((N.log_prob(param).sum(-1).exp() + 1e-10) * pi.view(-1,))
+    return -sum(pdfs).log().mean()
