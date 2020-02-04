@@ -80,8 +80,14 @@ def main( args ):
                 if l >= 2:
                     c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
                     mu_, std_, mix_, b_ = mu_[:l.item()-1, ...], std_[:l.item()-1, ...], mix_[:l.item()-1, ...], b_[:l.item()-1, ...]
-                    gmml = gmm_loss(mu_, std_, mix_, args.n_mix, c, r, s)
-                    loss.append( gmml + (-b*torch.log(b_)).mean())
+                    # preparing for mdn loss calc
+                    mu_ = mu_.view(1, l.item()-1, args.n_mix, -1)
+                    std_ = std_.view(1, l.item()-1, args.n_mix, -1)
+                    param_ = torch.cat([c, r, s], -1).view(1, l.item()-1, -1)
+                    mix_ = mix_.log().view(1, l.item()-1, args.n_mix)
+                    gmml = gmm_loss(param_, mu_, std_, mix_, reduce=True)
+                    stopbitloss = (-b*torch.log(b_)).mean()
+                    loss.append( gmml + stopbitloss )
 
             loss = sum(loss) / len(loss)
 
@@ -109,8 +115,14 @@ def main( args ):
                 if l >= 2:
                     c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
                     mu_, std_, mix_, b_ = mu_[:l.item()-1, ...], std_[:l.item()-1, ...], mix_[:l.item()-1, ...], b_[:l.item()-1, ...]
-                    gmml = gmm_loss(mu_, std_, mix_, args.n_mix, c, r, s)
-                    loss.append( gmml + (-b*torch.log(b_)).mean())
+                    # preparing for mdn loss calc
+                    mu_ = mu_.view(1, l.item()-1, args.n_mix, -1)
+                    std_ = std_.view(1, l.item()-1, args.n_mix, -1)
+                    param_ = torch.cat([c, r, s], -1).view(1, l.item()-1, -1)
+                    mix_ = mix_.log().view(1, l.item()-1, args.n_mix)
+                    gmml = gmm_loss(param_, mu_, std_, mix_, reduce=True)
+                    stopbitloss = (-b*torch.log(b_)).mean()
+                    loss.append( gmml + stopbitloss )
 
             loss = sum(loss) / len(loss)
 
