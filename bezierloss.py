@@ -7,8 +7,6 @@ class BezierLoss(nn.Module):
         super().__init__()
         self.degree = degree
         self.M = self._M(self.degree)
-        if torch.cuda.is_available():
-            self.M = self.M.cuda()
         self.reg_weight_p = reg_weight_p
         self.reg_weight_r = reg_weight_r
 
