@@ -45,7 +45,7 @@ def main( args ):
     if torch.cuda.is_available():
         model, h_initial, c_initial = model.cuda(), h_initial.cuda(), c_initial.cuda()
 
-    optim = torch.optim.RMSprop(model.parameters(), lr=args.lr)
+    optim = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     writer = tb.SummaryWriter(os.path.join(args.base, 'logs', args.tag))
 
@@ -150,10 +150,10 @@ def main( args ):
             torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
             writer.add_scalar('test-loss', avg_loss, global_step=e)
             
-        # savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
-        # inference(qdtest.get_dataloader(args.batch_size), model, embedder, emblayers=args.emblayers, embhidden=args.embhidden,
-        #     layers=args.layers, hidden=args.hidden, variational=False, bezier_degree=args.bezier_degree,
-        #     nsamples=args.nsamples, rsamples=args.rsamples, savefile=savefile)
+        savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
+        inference(qdtest.get_dataloader(args.batch_size), model, embedder, emblayers=args.emblayers, embhidden=args.embhidden,
+            layers=args.layers, hidden=args.hidden, variational=False, bezier_degree=args.bezier_degree, n_mix=args.n_mix,
+            nsamples=args.nsamples, rsamples=args.rsamples, savefile=savefile, device=device)
 
 
 if __name__ == '__main__':
@@ -189,7 +189,7 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('-i', '--interval', type=int, required=False, default=50, help='logging interval')
     parser.add_argument('--nsamples', type=int, required=False, default=2, help='no. of data samples for inference')
-    parser.add_argument('--rsamples', type=int, required=False, default=1, help='no. of distribution samples for inference')
+    parser.add_argument('--rsamples', type=int, required=False, default=3, help='no. of distribution samples for inference')
     args = parser.parse_args()
 
     main( args )

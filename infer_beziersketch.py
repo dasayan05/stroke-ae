@@ -1,5 +1,6 @@
 import os
 import torch, numpy as np
+dist = torch.distributions
 import matplotlib.pyplot as plt
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
@@ -61,7 +62,7 @@ def stroke_embed(batch, initials, embedder, variational=False):
     #     2. Start location of the stroke with respect to a global reference (of the sketch)
     return sketches_ctrlpt, sketches_ratw, sketches_st_starts, sketches_stopbits, n_strokes
 
-def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, nsamples, rsamples, variational, bezier_degree, savefile):
+def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix, nsamples, rsamples, variational, bezier_degree, savefile, device):
     with torch.no_grad():
         fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=(rsamples * 8, nsamples * 4))
         for i, B in enumerate(qdl):
@@ -75,17 +76,40 @@ def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, nsampl
 
             with torch.no_grad():
                 ctrlpts, ratws, starts, _, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
-            
+                _cpad = torch.zeros(ctrlpts.shape[0], 1, ctrlpts.shape[2], device=device)
+                _rpad = torch.zeros(ratws.shape[0], 1, ratws.shape[2], device=device)
+                _spad = torch.zeros(starts.shape[0], 1, starts.shape[2], device=device)
+                ctrlpts, ratws, starts = torch.cat([_cpad, ctrlpts], dim=1), torch.cat([_rpad, ratws], dim=1), torch.cat([_spad, starts], dim=1)
+
             for i in range(256):
                 if i == nsamples:
                     break
                 
                 n_stroke = n_strokes[i]
-                out_ctrlpts, out_ratws, out_starts, _ = model((h_initial, c_initial),
-                    ctrlpts[i,:n_stroke,:].unsqueeze(0), ratws[i,:n_stroke,:].unsqueeze(0), starts[i,:n_stroke,:].unsqueeze(0))
+                drawsketch(ctrlpts[i,1:n_stroke+1,:], ratws[i,1:n_stroke+1,:], starts[i,1:n_stroke+1,:], n_stroke, ax[i, 0])
 
-                drawsketch(ctrlpts[i,:n_stroke,:], ratws[i,:n_stroke,:], starts[i,:n_stroke,:], n_stroke, ax[i, 0])
-                drawsketch(out_ctrlpts.squeeze(), out_ratws.squeeze(), out_starts.squeeze(), n_stroke, ax[i, 1])
+                for r in range(rsamples):
+                    out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial),
+                        ctrlpts[i,:n_stroke,:].unsqueeze(0), ratws[i,:n_stroke,:].unsqueeze(0), starts[i,:n_stroke,:].unsqueeze(0))
+
+                    # reshape to make the n_mix visible
+                    out_param_mu = out_param_mu.view(1, -1, n_mix, out_param_mu.shape[-1]//n_mix)
+                    out_param_std = out_param_std.view(1, -1, n_mix, out_param_std.shape[-1]//n_mix)
+
+                    # sampled params at all timesteps
+                    out_ctrlpts = torch.zeros(n_stroke, model.n_ctrlpt)
+                    out_ratws = torch.zeros(n_stroke, model.n_ratw)
+                    out_starts = torch.zeros(n_stroke, model.n_start)
+
+                    mix_ids = dist.Categorical(out_param_mix.squeeze()).sample()
+                    for t, (mix_id, mu, std) in enumerate(zip(mix_ids, out_param_mu[0,...], out_param_std[0,...])):
+                        mu, std = mu[mix_id.item(), :], std[mix_id.item(), :]
+                        sample = dist.Normal(mu, std).sample()
+                        out_ctrlpts[t, :] = sample[:model.n_ctrlpt]
+                        out_ratws[t, :] = sample[model.n_ctrlpt:model.n_ctrlpt+model.n_ratw]
+                        out_starts[t, :] = sample[model.n_ctrlpt+model.n_ratw:]
+
+                    drawsketch(out_ctrlpts, out_ratws, out_starts, n_stroke, ax[i, 1+r])
 
             break # just one batch enough
 
