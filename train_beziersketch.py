@@ -128,7 +128,7 @@ def main( args ):
             loss = []
             for mu_, std_, mix_, b_, c, r, s, b, l in zip(out_param_mu, out_param_std, out_param_mix, out_stopbits,
                                                          ctrlpts,     ratws,     starts,     stopbits, n_strokes):
-                if l >= 1:
+                if l >= 2:
                     c, r, s, b = c[1:l.item()+1, ...], r[1:l.item()+1, ...], s[1:l.item()+1, ...], b[1:l.item()+1, ...]
                     mu_, std_, mix_, b_ = mu_[:l.item(), ...], std_[:l.item(), ...], mix_[:l.item(), ...], b_[:l.item(), ...]
                     # preparing for mdn loss calc
