@@ -72,27 +72,19 @@ def main( args ):
                 plt.savefig(f'junks/{e}_{i}.png')
                 plt.close()
 
-            _cpad = torch.zeros(ctrlpts.shape[0], 1, ctrlpts.shape[2], device=device)
-            _rpad = torch.zeros(ratws.shape[0], 1, ratws.shape[2], device=device)
-            _spad = torch.zeros(starts.shape[0], 1, starts.shape[2], device=device)
-            _bpad = torch.zeros(stopbits.shape[0], 1, stopbits.shape[2], device=device)
-            ctrlpts, ratws, starts, stopbits = torch.cat([_cpad, ctrlpts], dim=1), \
-                                    torch.cat([_rpad, ratws], dim=1), \
-                                    torch.cat([_spad, starts], dim=1), \
-                                    torch.cat([_bpad, stopbits], dim=1)
             out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
 
             loss = []
             for mu_, std_, mix_, b_, c, r, s, b, l in zip(out_param_mu, out_param_std, out_param_mix, out_stopbits,
                                                          ctrlpts,     ratws,     starts,     stopbits, n_strokes):
-                if l >= 1:
-                    c, r, s, b = c[1:l.item()+1, ...], r[1:l.item()+1, ...], s[1:l.item()+1, ...], b[1:l.item()+1, ...]
-                    mu_, std_, mix_, b_ = mu_[:l.item(), ...], std_[:l.item(), ...], mix_[:l.item(), ...], b_[:l.item(), ...]
+                if l >= 2:
+                    c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
+                    mu_, std_, mix_, b_ = mu_[:l.item()-1, ...], std_[:l.item()-1, ...], mix_[:l.item()-1, ...], b_[:l.item()-1, ...]
                     # preparing for mdn loss calc
-                    mu_ = mu_.view(1, l.item(), args.n_mix, -1)
-                    std_ = std_.view(1, l.item(), args.n_mix, -1)
-                    param_ = torch.cat([c, r, s], -1).view(1, l.item(), -1)
-                    mix_ = mix_.log().view(1, l.item(), args.n_mix)
+                    mu_ = mu_.view(1, l.item()-1, args.n_mix, -1)
+                    std_ = std_.view(1, l.item()-1, args.n_mix, -1)
+                    param_ = torch.cat([c, r, s], -1).view(1, l.item()-1, -1)
+                    mix_ = mix_.log().view(1, l.item()-1, args.n_mix)
                     gmml = gmm_loss(param_, mu_, std_, mix_, reduce=True)
                     stopbitloss = (-b*torch.log(b_)).mean()
                     loss.append( gmml + stopbitloss )
@@ -114,28 +106,20 @@ def main( args ):
         for i, B in enumerate(qdltest):
             with torch.no_grad():
                 ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
-
-            _cpad = torch.zeros(ctrlpts.shape[0], 1, ctrlpts.shape[2], device=device)
-            _rpad = torch.zeros(ratws.shape[0], 1, ratws.shape[2], device=device)
-            _spad = torch.zeros(starts.shape[0], 1, starts.shape[2], device=device)
-            _bpad = torch.zeros(stopbits.shape[0], 1, stopbits.shape[2], device=device)
-            ctrlpts, ratws, starts, stopbits = torch.cat([_cpad, ctrlpts], dim=1), \
-                                    torch.cat([_rpad, ratws], dim=1), \
-                                    torch.cat([_spad, starts], dim=1), \
-                                    torch.cat([_bpad, stopbits], dim=1)
+            
             out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
 
             loss = []
             for mu_, std_, mix_, b_, c, r, s, b, l in zip(out_param_mu, out_param_std, out_param_mix, out_stopbits,
                                                          ctrlpts,     ratws,     starts,     stopbits, n_strokes):
                 if l >= 2:
-                    c, r, s, b = c[1:l.item()+1, ...], r[1:l.item()+1, ...], s[1:l.item()+1, ...], b[1:l.item()+1, ...]
-                    mu_, std_, mix_, b_ = mu_[:l.item(), ...], std_[:l.item(), ...], mix_[:l.item(), ...], b_[:l.item(), ...]
+                    c, r, s, b = c[1:l.item(), ...], r[1:l.item(), ...], s[1:l.item(), ...], b[1:l.item(), ...]
+                    mu_, std_, mix_, b_ = mu_[:l.item()-1, ...], std_[:l.item()-1, ...], mix_[:l.item()-1, ...], b_[:l.item()-1, ...]
                     # preparing for mdn loss calc
-                    mu_ = mu_.view(1, l.item(), args.n_mix, -1)
-                    std_ = std_.view(1, l.item(), args.n_mix, -1)
-                    param_ = torch.cat([c, r, s], -1).view(1, l.item(), -1)
-                    mix_ = mix_.log().view(1, l.item(), args.n_mix)
+                    mu_ = mu_.view(1, l.item()-1, args.n_mix, -1)
+                    std_ = std_.view(1, l.item()-1, args.n_mix, -1)
+                    param_ = torch.cat([c, r, s], -1).view(1, l.item()-1, -1)
+                    mix_ = mix_.log().view(1, l.item()-1, args.n_mix)
                     gmml = gmm_loss(param_, mu_, std_, mix_, reduce=True)
                     stopbitloss = (-b*torch.log(b_)).mean()
                     loss.append( gmml + stopbitloss )
