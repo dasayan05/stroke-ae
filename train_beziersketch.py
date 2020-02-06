@@ -24,8 +24,6 @@ def main( args ):
     # Embedder model (pretrained and freezed)
     embedder = RNNBezierAE(2, args.embhidden, args.emblayers, args.bezier_degree, bidirectional=True,
         variational=args.embvariational, stochastic_t=args.stochastic_t)
-    if torch.cuda.is_available():
-        embedder = embedder.cuda()
     embmodel = os.path.join(args.base, args.embmodel)
     if os.path.exists(embmodel):
         embedder.load_state_dict(torch.load(embmodel))
@@ -34,7 +32,7 @@ def main( args ):
     h_initial_emb = torch.zeros(args.emblayers * 2, args.batch_size, args.embhidden, dtype=torch.float32)
     c_initial_emb = torch.zeros(args.emblayers * 2, args.batch_size, args.embhidden, dtype=torch.float32)
     if torch.cuda.is_available():
-        h_initial_emb, c_initial_emb = h_initial_emb.cuda(), c_initial_emb.cuda()
+        embedder, h_initial_emb, c_initial_emb = embedder.cuda(), h_initial_emb.cuda(), c_initial_emb.cuda()
     embedder.eval()
 
     # RNN Sketch model
