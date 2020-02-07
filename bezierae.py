@@ -42,8 +42,13 @@ class RNNBezierAE(nn.Module):
         # Bezier mechanics
         self.bezierloss = BezierLoss(self.bezier_degree, reg_weight_p=None, reg_weight_r=None)
 
-    def constraint_t(self, t):
-        return torch.cumsum(torch.softmax(t.squeeze(-1), 1), 1)
+    def constraint_t(self, ts, lens):
+        ts = ts.squeeze(-1)
+        csm = []
+        for t, l in zip(ts, lens):
+            csm.append( torch.cumsum(torch.softmax(t[:l.item()], 0), 0) )
+        csm = pad_sequence(csm, batch_first=True, padding_value=0.)
+        return csm
 
     def reparam(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -59,7 +64,7 @@ class RNNBezierAE(nn.Module):
             t_normal = torch.distributions.Normal(t_logits, t_logits_std)
             t_logits = t_normal.rsample()
 
-        ts = self.constraint_t(t_logits)
+        ts = self.constraint_t(t_logits, lens)
 
         # latent space
         h_final = h_final.view(self.n_layer, self.bidirectional, -1, self.n_hidden)
