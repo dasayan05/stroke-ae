@@ -14,7 +14,7 @@ class RNNBezierAE(nn.Module):
         # Track parameters
         self.n_input, self.n_hidden, self.n_layer = n_input, n_hidden, n_layer
         self.bezier_degree = bezier_degree
-        self.n_latent_ctrl = (self.bezier_degree + 1) * 2
+        self.n_latent_ctrl = (self.bezier_degree + 1 - 1) * 2 # The second '-1' is for Delta_P encoding
         self.n_latent_ratw = self.bezier_degree + 1 - 2
         self.bidirectional = 2 if bidirectional else 1
         self.dtype = dtype
@@ -87,7 +87,13 @@ class RNNBezierAE(nn.Module):
             if self.training:
                 KLD = -0.5 * torch.mean(1 + latent_ctrlpt_logvar - latent_ctrlpt.pow(2) - latent_ctrlpt_logvar.exp())
 
+        # 'P's should be encoded as [P0=0, DelP1, DelP2, ..]
         latent_ctrlpt = latent_ctrlpt.view(-1, self.n_latent_ctrl // 2, 2)
+        latent_ctrlpt_return = latent_ctrlpt
+        P0 = torch.zeros(latent_ctrlpt.shape[0], 1, 2, device=latent_ctrlpt.device)
+        latent_ctrlpt = torch.cat([P0, latent_ctrlpt], 1)
+        latent_ctrlpt = torch.cumsum(latent_ctrlpt, 1)
+
         if self.rational:
             latent_ratw = self.ratw_arm(hc_projection)
             z_ = torch.ones((latent_ratw.shape[0], 1), device=latent_ratw.device) * 5. # sigmoid(5.) is close to 1
@@ -111,9 +117,9 @@ class RNNBezierAE(nn.Module):
         else:
             if not self.variational:
                 if self.rational:
-                    return latent_ctrlpt, latent_ratw
+                    return latent_ctrlpt_return, latent_ratw
                 else:
-                    return latent_ctrlpt
+                    return latent_ctrlpt_return
             else:
                 if self.rational:
                     return latent_ctrlpt_mean, torch.exp(0.5 * latent_ctrlpt_logvar), latent_ratw

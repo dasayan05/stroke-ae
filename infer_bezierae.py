@@ -49,6 +49,10 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
                 else:
                     ratw_ = None
 
+                # Decode the encoded DelP1..DelPn
+                P0 = torch.zeros(1, ctrlpt_.shape[1], device=ctrlpt_.device)
+                ctrlpt_ = torch.cat([P0, ctrlpt_], 0)
+                ctrlpt_ = torch.cumsum(ctrlpt_, 0)
                 draw_bezier(ctrlpt_.cpu().numpy(), ratw_.cpu().numpy() if ratw_ is not None else ratw_,
                     annotate=False, draw_axis=ax[i, s + 1])
             

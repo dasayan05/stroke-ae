@@ -37,7 +37,7 @@ def main( args ):
 
     # RNN Sketch model
     n_ratw = args.bezier_degree + 1 - 2
-    n_ctrlpt = (args.bezier_degree + 1) * 2
+    n_ctrlpt = (args.bezier_degree + 1 - 1) * 2
     model = RNNSketchAE((n_ctrlpt, n_ratw, 2), args.hidden, dropout=args.dropout, n_mixture=args.n_mix, rational=args.rational)
     
     h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
@@ -80,7 +80,6 @@ def main( args ):
                 out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
             else:
                 out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, None, starts)
-
             loss = []
             for mu_, std_, mix_, b_, c, r, s, b, l in zip(out_param_mu, out_param_std, out_param_mix, out_stopbits,
                                                          ctrlpts,     ratws,     starts,     stopbits, n_strokes):

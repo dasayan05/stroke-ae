@@ -10,6 +10,10 @@ from beziercurve import draw_bezier
 def drawsketch(ctrlpts, ratws, st_starts, n_stroke, draw_axis=plt.gca()):
     ctrlpts, ratws, st_starts = ctrlpts[:n_stroke], ratws[:n_stroke], st_starts[:n_stroke]
     ctrlpts = ctrlpts.view(-1, ctrlpts.shape[-1] // 2, 2)
+    # Decode the DelP1..DelPn
+    P0 = torch.zeros(ctrlpts.shape[0], 1, ctrlpts.shape[2], device=ctrlpts.device)
+    ctrlpts = torch.cat([P0, ctrlpts], 1)
+    ctrlpts = torch.cumsum(ctrlpts, 1)
     
     z_ = torch.ones((ratws.shape[0], 1), device=ratws.device) * 5. # sigmoid(5.) is close to 1
     ratws = torch.cat([z_, ratws, z_], 1)
