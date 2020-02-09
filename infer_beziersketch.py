@@ -38,12 +38,19 @@ def stroke_embed(batch, initials, embedder, variational=False):
         sk = pad_sequence(sk, batch_first=True)
         sk = pack_padded_sequence(sk, ls, batch_first=True, enforce_sorted=False)
         if not variational:
-            emb_ctrlpt, emb_ratw = embedder(sk, h_initial, c_initial)
+            if embedder.rational:
+                emb_ctrlpt, emb_ratw = embedder(sk, h_initial, c_initial)
+            else:
+                emb_ctrlpt = embedder(sk, h_initial, c_initial)
         else:
-            emb_ctrlpt, _, emb_ratw = embedder(sk, h_initial, c_initial)
+            if embedder.rational:
+                emb_ctrlpt, _, emb_ratw = embedder(sk, h_initial, c_initial)
+            else:
+                emb_ctrlpt, _ = embedder(sk, h_initial, c_initial)
         
         sketches_ctrlpt.append(emb_ctrlpt.view(len(ls), -1))
-        sketches_ratw.append(emb_ratw)
+        if embedder.rational:
+            sketches_ratw.append(emb_ratw)
         sketches_st_starts.append(st_starts)
         # create stopbits
         stopbit = torch.zeros(emb_ctrlpt.shape[0], 1, device=device); stopbit[-1, 0] = 1.
@@ -52,7 +59,8 @@ def stroke_embed(batch, initials, embedder, variational=False):
     
     n_strokes = torch.tensor(n_strokes, device=device)
     sketches_ctrlpt = pad_sequence(sketches_ctrlpt, batch_first=True)
-    sketches_ratw = pad_sequence(sketches_ratw, batch_first=True)
+    if embedder.rational:
+        sketches_ratw = pad_sequence(sketches_ratw, batch_first=True)
     sketches_st_starts = pad_sequence(sketches_st_starts, batch_first=True)
     sketches_stopbits = pad_sequence(sketches_stopbits, batch_first=True, padding_value=1.0)
 
@@ -60,7 +68,10 @@ def stroke_embed(batch, initials, embedder, variational=False):
     #   For every stroke in the sketch:
     #     1. (Control Point, Rational Weights) pair
     #     2. Start location of the stroke with respect to a global reference (of the sketch)
-    return sketches_ctrlpt, sketches_ratw, sketches_st_starts, sketches_stopbits, n_strokes
+    if embedder.rational:
+        return sketches_ctrlpt, sketches_ratw, sketches_st_starts, sketches_stopbits, n_strokes
+    else:
+        return sketches_ctrlpt, sketches_st_starts, sketches_stopbits, n_strokes
 
 def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix, nsamples, rsamples, variational, bezier_degree, savefile, device):
     with torch.no_grad():
@@ -75,11 +86,18 @@ def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix,
                 h_initial, h_initial_emb, c_initial, c_initial_emb = h_initial.cuda(), h_initial_emb.cuda(), c_initial.cuda(), c_initial_emb.cuda()
 
             with torch.no_grad():
-                ctrlpts, ratws, starts, _, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                if model.rational:
+                    ctrlpts, ratws, starts, _, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                else:
+                    ctrlpts, starts, _, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                    ratws = torch.ones(ctrlpts.shape[0], ctrlpts.shape[1], model.n_ratw, device=ctrlpts.device)
+
                 _cpad = torch.zeros(ctrlpts.shape[0], 1, ctrlpts.shape[2], device=device)
                 _rpad = torch.zeros(ratws.shape[0], 1, ratws.shape[2], device=device)
                 _spad = torch.zeros(starts.shape[0], 1, starts.shape[2], device=device)
-                ctrlpts, ratws, starts = torch.cat([_cpad, ctrlpts], dim=1), torch.cat([_rpad, ratws], dim=1), torch.cat([_spad, starts], dim=1)
+                ctrlpts = torch.cat([_cpad, ctrlpts], dim=1)
+                ratws = torch.cat([_rpad, ratws], dim=1)
+                starts = torch.cat([_spad, starts], dim=1)
 
             for i in range(256):
                 if i == nsamples:
@@ -89,8 +107,12 @@ def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix,
                 drawsketch(ctrlpts[i,1:n_stroke+1,:], ratws[i,1:n_stroke+1,:], starts[i,1:n_stroke+1,:], n_stroke, ax[i, 0])
 
                 for r in range(rsamples):
-                    out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial),
-                        ctrlpts[i,:n_stroke,:].unsqueeze(0), ratws[i,:n_stroke,:].unsqueeze(0), starts[i,:n_stroke,:].unsqueeze(0))
+                    if model.rational:
+                        out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), 
+                            ctrlpts[i,:n_stroke,:].unsqueeze(0), ratws[i,:n_stroke,:].unsqueeze(0), starts[i,:n_stroke,:].unsqueeze(0))
+                    else:
+                        out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), 
+                            ctrlpts[i,:n_stroke,:].unsqueeze(0), None, starts[i,:n_stroke,:].unsqueeze(0))
 
                     # reshape to make the n_mix visible
                     out_param_mu = out_param_mu.view(1, -1, n_mix, out_param_mu.shape[-1]//n_mix)
@@ -98,7 +120,10 @@ def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix,
 
                     # sampled params at all timesteps
                     out_ctrlpts = torch.zeros(n_stroke, model.n_ctrlpt)
-                    out_ratws = torch.zeros(n_stroke, model.n_ratw)
+                    if model.rational:
+                        out_ratws = torch.zeros(n_stroke, model.n_ratw)
+                    else:
+                        out_ratws = torch.ones(n_stroke, model.n_ratw)
                     out_starts = torch.zeros(n_stroke, model.n_start)
 
                     mix_ids = dist.Categorical(out_param_mix.squeeze()).sample()
@@ -106,9 +131,11 @@ def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix,
                         mu, std = mu[mix_id.item(), :], std[mix_id.item(), :]
                         sample = dist.Normal(mu, std).sample()
                         out_ctrlpts[t, :] = sample[:model.n_ctrlpt]
-                        out_ratws[t, :] = sample[model.n_ctrlpt:model.n_ctrlpt+model.n_ratw]
-                        out_starts[t, :] = sample[model.n_ctrlpt+model.n_ratw:]
-
+                        if model.rational:
+                            out_ratws[t, :] = sample[model.n_ctrlpt:model.n_ctrlpt+model.n_ratw]
+                            out_starts[t, :] = sample[model.n_ctrlpt+model.n_ratw:]
+                        else:
+                            out_starts[t, :] = sample[model.n_ctrlpt:]
                     drawsketch(out_ctrlpts, out_ratws, out_starts, n_stroke, ax[i, 1+r])
 
             break # just one batch enough

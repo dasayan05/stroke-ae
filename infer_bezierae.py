@@ -26,7 +26,10 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
                 X_numpy = X_.squeeze().numpy()
 
             if not variational:
-                ctrlpt, ratw = model(X, h_initial, c_initial)
+                if model.rational:
+                    ctrlpt, ratw = model(X, h_initial, c_initial)
+                else:
+                    ctrlpt = model(X, h_initial, c_initial)
                 normal = torch.distributions.Normal(ctrlpt.squeeze(), torch.zeros_like(ctrlpt.squeeze()))
             else:
                 ctrlpt_mu, ctrlpt_std, ratw = model(X, h_initial, c_initial)
@@ -38,12 +41,16 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
 
             for s in range(rsamples):
                 ctrlpt_ = normal.sample()
-                ratw_ = ratw.squeeze()
                 
-                ratw_ = torch.cat([torch.tensor([5.,], device=ratw_.device), ratw_, torch.tensor([5.,], device=ratw_.device)], 0)
-                ratw_ = torch.sigmoid(ratw_)
+                if model.rational:
+                    ratw_ = ratw.squeeze()
+                    ratw_ = torch.cat([torch.tensor([5.,], device=ratw_.device), ratw_, torch.tensor([5.,], device=ratw_.device)], 0)
+                    ratw_ = torch.sigmoid(ratw_)
+                else:
+                    ratw_ = None
 
-                draw_bezier(ctrlpt_.cpu().numpy(), ratw_.cpu().numpy(), annotate=False, draw_axis=ax[i, s + 1])
+                draw_bezier(ctrlpt_.cpu().numpy(), ratw_.cpu().numpy() if ratw_ is not None else ratw_,
+                    annotate=False, draw_axis=ax[i, s + 1])
             
         plt.xticks([]); plt.yticks([])
         plt.savefig(savefile)

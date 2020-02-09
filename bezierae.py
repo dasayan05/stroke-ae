@@ -8,7 +8,7 @@ from bezierloss import BezierLoss
 
 class RNNBezierAE(nn.Module):
     def __init__(self, n_input, n_hidden, n_layer, bezier_degree, dtype=torch.float32, bidirectional=True,
-        variational=False, dropout=0.8, stochastic_t=False):
+        variational=False, dropout=0.8, stochastic_t=False, rational=True):
         super().__init__()
 
         # Track parameters
@@ -20,6 +20,7 @@ class RNNBezierAE(nn.Module):
         self.dtype = dtype
         self.variational = variational
         self.dropout = dropout
+        self.rational = rational
         self.stochastic_t = stochastic_t
 
         # The t-network
@@ -37,7 +38,8 @@ class RNNBezierAE(nn.Module):
         self.ctrlpt_arm = nn.Linear(n_project, self.n_latent_ctrl)
         if self.variational:
             self.ctrlpt_logvar_arm = nn.Linear(n_project, self.n_latent_ctrl)
-        self.ratw_arm = nn.Linear(n_project, self.n_latent_ratw)
+        if self.rational:
+            self.ratw_arm = nn.Linear(n_project, self.n_latent_ratw)
 
         # Bezier mechanics
         self.bezierloss = BezierLoss(self.bezier_degree, reg_weight_p=None, reg_weight_r=None)
@@ -86,15 +88,21 @@ class RNNBezierAE(nn.Module):
                 KLD = -0.5 * torch.mean(1 + latent_ctrlpt_logvar - latent_ctrlpt.pow(2) - latent_ctrlpt_logvar.exp())
 
         latent_ctrlpt = latent_ctrlpt.view(-1, self.n_latent_ctrl // 2, 2)
-        latent_ratw = self.ratw_arm(hc_projection)
-        z_ = torch.ones((latent_ratw.shape[0], 1), device=latent_ratw.device) * 5. # sigmoid(5.) is close to 1
-        latent_ratw_padded = torch.cat([z_, latent_ratw, z_], 1)
+        if self.rational:
+            latent_ratw = self.ratw_arm(hc_projection)
+            z_ = torch.ones((latent_ratw.shape[0], 1), device=latent_ratw.device) * 5. # sigmoid(5.) is close to 1
+            latent_ratw_padded = torch.cat([z_, latent_ratw, z_], 1)
         
         if self.training:
             out, regu = [], []
-            for t, p, r, l in zip(ts, latent_ctrlpt, torch.sigmoid(latent_ratw_padded), lens):
-                out.append( self.bezierloss(p, r, None, ts=t[:l]) )
-                regu.append( (self.bezierloss._consecutive_dist(p)**2).mean() )
+            if self.rational:
+                for t, p, r, l in zip(ts, latent_ctrlpt, torch.sigmoid(latent_ratw_padded), lens):
+                    out.append( self.bezierloss(p, r, None, ts=t[:l]) )
+                    regu.append( (self.bezierloss._consecutive_dist(p)**2).mean() )
+            else:
+                for t, p, l in zip(ts, latent_ctrlpt, lens):
+                    out.append( self.bezierloss(p, None, None, ts=t[:l]) )
+                    regu.append( (self.bezierloss._consecutive_dist(p)**2).mean() )
             
             if not self.variational:
                 return out, sum(regu) / len(regu)
@@ -102,12 +110,18 @@ class RNNBezierAE(nn.Module):
                 return out, sum(regu) / len(regu), KLD
         else:
             if not self.variational:
-                return latent_ctrlpt, latent_ratw
+                if self.rational:
+                    return latent_ctrlpt, latent_ratw
+                else:
+                    return latent_ctrlpt
             else:
-                return latent_ctrlpt_mean, torch.exp(0.5 * latent_ctrlpt_logvar), latent_ratw
+                if self.rational:
+                    return latent_ctrlpt_mean, torch.exp(0.5 * latent_ctrlpt_logvar), latent_ratw
+                else:
+                    return latent_ctrlpt_mean, torch.exp(0.5 * latent_ctrlpt_logvar)
 
 class RNNSketchAE(nn.Module):
-    def __init__(self, n_inps, n_hidden, n_layer = 2, n_mixture = 3, dropout = 0.8, eps = 1e-8):
+    def __init__(self, n_inps, n_hidden, n_layer = 2, n_mixture = 3, dropout = 0.8, eps = 1e-8, rational = True):
         super().__init__()
 
         # Track parameters
@@ -117,8 +131,9 @@ class RNNSketchAE(nn.Module):
         self.n_hc = 2 * 2 * self.n_hidden
         self.n_latent = self.n_hc // 2
         self.dropout = dropout
-        self.n_params = self.n_ctrlpt + self.n_ratw + self.n_start
+        self.n_params = self.n_ctrlpt + (self.n_ratw if rational else 0) + self.n_start
         self.n_mixture = n_mixture
+        self.rational = rational
 
         self.eps = eps
 
@@ -144,7 +159,10 @@ class RNNSketchAE(nn.Module):
     
     def forward(self, initials, ctrlpt, ratw, start):
         h_initial, c_initial = initials
-        input = torch.cat([ctrlpt, ratw, start], -1)
+        if self.rational:
+            input = torch.cat([ctrlpt, ratw, start], -1)
+        else:
+            input = torch.cat([ctrlpt, start], -1)
         _, (hn, cn) = self.encoder(input, (h_initial, c_initial))
         hn = hn.view(self.n_layer, 2, -1, self.n_hidden)
         cn = cn.view(self.n_layer, 2, -1, self.n_hidden)

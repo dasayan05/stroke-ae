@@ -23,7 +23,7 @@ def main( args ):
 
     # Embedder model (pretrained and freezed)
     embedder = RNNBezierAE(2, args.embhidden, args.emblayers, args.bezier_degree, bidirectional=True,
-        variational=args.embvariational, stochastic_t=args.stochastic_t)
+        variational=args.embvariational, stochastic_t=args.stochastic_t, rational=args.rational)
     embmodel = os.path.join(args.base, args.embmodel)
     if os.path.exists(embmodel):
         embedder.load_state_dict(torch.load(embmodel))
@@ -38,7 +38,7 @@ def main( args ):
     # RNN Sketch model
     n_ratw = args.bezier_degree + 1 - 2
     n_ctrlpt = (args.bezier_degree + 1) * 2
-    model = RNNSketchAE((n_ctrlpt, n_ratw, 2), args.hidden, dropout=args.dropout, n_mixture=args.n_mix)
+    model = RNNSketchAE((n_ctrlpt, n_ratw, 2), args.hidden, dropout=args.dropout, n_mixture=args.n_mix, rational=args.rational)
     
     h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
     c_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
@@ -54,7 +54,11 @@ def main( args ):
         model.train()
         for i, B in enumerate(qdltrain):
             with torch.no_grad():
-                ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                if args.rational:
+                    ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                else:
+                    ctrlpts, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                    ratws = torch.ones(args.batch_size, ctrlpts.shape[1], n_ratw) # FAKE IT
             
             if args.rendersketch:
                 fig, ax = plt.subplots(5, 5, figsize=(20, 20))
@@ -72,7 +76,10 @@ def main( args ):
                 plt.savefig(f'junks/{e}_{i}.png')
                 plt.close()
 
-            out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
+            if args.rational:
+                out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
+            else:
+                out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, None, starts)
 
             loss = []
             for mu_, std_, mix_, b_, c, r, s, b, l in zip(out_param_mu, out_param_std, out_param_mix, out_stopbits,
@@ -83,7 +90,10 @@ def main( args ):
                     # preparing for mdn loss calc
                     mu_ = mu_.view(1, l.item()-1, args.n_mix, -1)
                     std_ = std_.view(1, l.item()-1, args.n_mix, -1)
-                    param_ = torch.cat([c, r, s], -1).view(1, l.item()-1, -1)
+                    if args.rational:
+                        param_ = torch.cat([c, r, s], -1).view(1, l.item()-1, -1)
+                    else:
+                        param_ = torch.cat([c, s], -1).view(1, l.item()-1, -1)
                     mix_ = mix_.log().view(1, l.item()-1, args.n_mix)
                     gmml = gmm_loss(param_, mu_, std_, mix_, reduce=True)
                     stopbitloss = (-b*torch.log(b_)).mean()
@@ -105,9 +115,16 @@ def main( args ):
         model.eval()
         for i, B in enumerate(qdltest):
             with torch.no_grad():
-                ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                if args.rational:
+                    ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                else:
+                    ctrlpts, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                    ratws = torch.ones(args.batch_size, ctrlpts.shape[1], n_ratw) # FAKE IT
             
-            out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
+            if args.rational:
+                out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
+            else:
+                out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, None, starts)
 
             loss = []
             for mu_, std_, mix_, b_, c, r, s, b, l in zip(out_param_mu, out_param_std, out_param_mix, out_stopbits,
@@ -118,7 +135,10 @@ def main( args ):
                     # preparing for mdn loss calc
                     mu_ = mu_.view(1, l.item()-1, args.n_mix, -1)
                     std_ = std_.view(1, l.item()-1, args.n_mix, -1)
-                    param_ = torch.cat([c, r, s], -1).view(1, l.item()-1, -1)
+                    if args.rational:
+                        param_ = torch.cat([c, r, s], -1).view(1, l.item()-1, -1)
+                    else:
+                        param_ = torch.cat([c, s], -1).view(1, l.item()-1, -1)
                     mix_ = mix_.log().view(1, l.item()-1, args.n_mix)
                     gmml = gmm_loss(param_, mu_, std_, mix_, reduce=True)
                     stopbitloss = (-b*torch.log(b_)).mean()
@@ -157,6 +177,7 @@ if __name__ == '__main__':
     parser.add_argument('--emblayers', type=int, required=False, default=1, help='no of layers (in embedder)')
     parser.add_argument('--embmodel', type=str, required=True, help='path to the pre-trained embedder')
     parser.add_argument('-T', '--stochastic_t', action='store_true', help='Use stochastic t-values')
+    parser.add_argument('-R', '--rational', action='store_true', help='Rational bezier curve ?')
     parser.add_argument('--hidden', type=int, required=False, default=256, help='no. of hidden neurons')
     parser.add_argument('-x', '--n_mix', type=int, required=False, default=3, help='no. of GMM mixtures')
     parser.add_argument('--layers', type=int, required=False, default=2, help='no of layers in encoder RNN')
