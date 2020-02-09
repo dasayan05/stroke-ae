@@ -105,7 +105,6 @@ def main( args ):
                     mix_ = mix_.log().view(1, l.item(), args.n_mix)
                     gmml = gmm_loss(param_, mu_, std_, mix_, reduce=True)
                     b_ = torch.softmax(b_, 0)
-                    breakpoint()
                     stopbitloss = (-b*torch.log(b_)).mean()
                     loss.append( gmml + stopbitloss )
 
