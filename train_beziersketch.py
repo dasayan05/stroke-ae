@@ -55,6 +55,7 @@ def main( args ):
     for e in range(args.epochs):
         model.train()
         for i, B in enumerate(qdltrain):
+            break
             with torch.no_grad():
                 if args.rational:
                     ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
@@ -132,6 +133,7 @@ def main( args ):
         avg_loss = 0.
         model.eval()
         for i, B in enumerate(qdltest):
+            break
             with torch.no_grad():
                 if args.rational:
                     ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
@@ -190,7 +192,7 @@ def main( args ):
         savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
         inference(qdtest.get_dataloader(args.batch_size), model, embedder, emblayers=args.emblayers, embhidden=args.embhidden,
             layers=args.layers, hidden=args.hidden, variational=False, bezier_degree=args.bezier_degree, n_mix=args.n_mix,
-            nsamples=args.nsamples, rsamples=args.rsamples, savefile=savefile, device=device)
+            nsamples=args.nsamples, rsamples=args.rsamples, savefile=savefile, device=device, invert_y=not args.raw)
 
 
 if __name__ == '__main__':

@@ -171,7 +171,7 @@ class RNNSketchAE(nn.Module):
         eps = torch.randn_like(std)
         return (mu + eps * std)
     
-    def forward(self, initials, ctrlpt, ratw, start):
+    def forward(self, initials, ctrlpt, ratw, start, inference=False):
         h_initial, c_initial = initials
         if self.rational:
             input = torch.cat([ctrlpt, ratw, start], -1)
@@ -213,36 +213,59 @@ class RNNSketchAE(nn.Module):
             else:
                 return out_param_mu, out_param_std, out_param_mix, out_stopbit, KLD
         else:
+            
+            if inference:
+                L = input.shape[1] # just as a safety (see the for loop)
+                input = torch.zeros_like(input[:,0,:].unsqueeze(1)) # 1x1xF
+                stop = False
+
+                out_ctrlpts, out_ratws, out_starts = [], [], []
+                for _ in range(L + 5):
+                    state, (h1, c1) = self.decoder(input, (h0, c0))
+                    
+                    out_param_mu = self.param_mu_arm(state).squeeze()
+                    out_param_std = torch.exp(self.param_std_arm(state)).squeeze()
+                    out_param_mix = torch.softmax(self.param_mix_arm(state), -1).squeeze()
+                    out_stopbit = torch.sigmoid(self.stopbit_arm(state)).squeeze()
+
+                    # reshape to make the n_mix visible
+                    out_param_mu = out_param_mu.view(self.n_mixture, out_param_mu.shape[-1] // self.n_mixture)
+                    out_param_std = out_param_std.view(self.n_mixture, out_param_std.shape[-1] // self.n_mixture)
+
+                    mix_id = dist.Categorical(out_param_mix.squeeze()).sample()
+
+                    mu, std = out_param_mu[mix_id.item(), :], out_param_std[mix_id.item(), :]
+                    sample = dist.Normal(mu, std).sample()
+                    out_ctrlpts.append(sample[:self.n_ctrlpt])
+                    if self.rational:
+                        out_ratws.append(sample[self.n_ctrlpt:self.n_ctrlpt+self.n_ratw])
+                        out_starts.append(sample[self.n_ctrlpt+self.n_ratw:])
+                        input = torch.cat([out_ctrlpts[-1], out_ratws[-1], out_starts[-1]], -1)
+                    else:
+                        out_starts.append(sample[self.n_ctrlpt:])
+                        input = torch.cat([out_ctrlpts[-1], out_starts[-1]], -1)
+
+                    input = input.unsqueeze(0).unsqueeze(0)
+                    h0, c0 = h1, c1
+
+                    if out_stopbit.item() >= 0.99:
+                        break
+                
+                out_ctrlpts = torch.stack(out_ctrlpts, 0)
+                if self.rational:
+                    out_ratws = torch.stack(out_ratws, 0)
+                out_starts = torch.stack(out_starts, 0)
+
+                if self.rational:
+                    return out_ctrlpts, out_ratws, out_starts
+                else:
+                    return out_ctrlpts, out_starts
+            
             if not self.variational:
                 # as of now, teacher-frocing even in testing
                 return out_param_mu, out_param_std, out_param_mix, out_stopbit
             else:
                 return out_param_mu, out_param_std, out_param_mix, out_stopbit, KLD
-            
-            # L = input.shape[1]
-            # input = input[:,0,:].unsqueeze(1)
-            # stop = False
-
-            # out_ctrlpt, out_ratw, out_start = [], [], []
-            # for _ in range(L + 5):
-            #     state, (h1, c1) = self.decoder(input, (h0, c0))
-                
-            #     ctrlpt = self.ctrlpt_arm(state)
-            #     ratw = torch.sigmoid(self.ratw_arm(state))
-            #     start = self.start_arm(state)
-            #     stopbit = torch.sigmoid(self.stopbit_arm(state))
-                
-            #     out_ctrlpt.append(ctrlpt)
-            #     out_ratw.append(ratw)
-            #     out_start.append(start)
-
-            #     input = torch.cat([ctrlpt, ratw, start], -1)
-            #     h0, c0 = h1, c1
-
-            #     if stopbit.item() >= 0.99:
-            #         break
-
-            # return torch.cat(out_ctrlpt, 1), torch.cat(out_ratw, 1), torch.cat(out_start, 1)
 
 # def gmm_loss(mu, std, mix, n_mix, ctrlpt, ratw, start):
 #     param = torch.cat([ctrlpt, ratw, start], -1)

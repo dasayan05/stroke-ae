@@ -7,7 +7,7 @@ from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_se
 from quickdraw.quickdraw import QuickDraw
 from beziercurve import draw_bezier
 
-def drawsketch(ctrlpts, ratws, st_starts, n_stroke, draw_axis=plt.gca()):
+def drawsketch(ctrlpts, ratws, st_starts, n_stroke, draw_axis=plt.gca(), invert_y=True):
     ctrlpts, ratws, st_starts = ctrlpts[:n_stroke], ratws[:n_stroke], st_starts[:n_stroke]
     ctrlpts = ctrlpts.view(-1, ctrlpts.shape[-1] // 2, 2)
     # Decode the DelP1..DelPn
@@ -23,7 +23,8 @@ def drawsketch(ctrlpts, ratws, st_starts, n_stroke, draw_axis=plt.gca()):
         st_start = st_start.detach().cpu().numpy()
         draw_bezier(ctrlpt, ratw, start_xy=st_start, draw_axis=draw_axis, annotate=False,
             ctrlPointPlotKwargs=dict(marker='X', color='red', linestyle='--', alpha=0.4))
-    draw_axis.invert_yaxis()
+    if invert_y:
+        draw_axis.invert_yaxis()
 
 def stroke_embed(batch, initials, embedder, variational=False):
     h_initial, c_initial = initials
@@ -77,7 +78,8 @@ def stroke_embed(batch, initials, embedder, variational=False):
     else:
         return sketches_ctrlpt, sketches_st_starts, sketches_stopbits, n_strokes
 
-def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix, nsamples, rsamples, variational, bezier_degree, savefile, device):
+def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix,
+    nsamples, rsamples, variational, bezier_degree, savefile, device, invert_y):
     with torch.no_grad():
         fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=(rsamples * 8, nsamples * 4))
         for i, B in enumerate(qdl):
@@ -108,44 +110,24 @@ def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix,
                     break
                 
                 n_stroke = n_strokes[i]
-                drawsketch(ctrlpts[i,1:n_stroke+1,:], ratws[i,1:n_stroke+1,:], starts[i,1:n_stroke+1,:], n_stroke, ax[i, 0])
+                drawsketch(ctrlpts[i,1:n_stroke+1,:], ratws[i,1:n_stroke+1,:], starts[i,1:n_stroke+1,:],
+                    n_stroke, ax[i, 0], invert_y=invert_y)
 
                 for r in range(rsamples):
                     if model.rational:
-                        out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), 
+                        out_param_mu, out_param_std, out_param_mix, _ = model((h_initial, c_initial), 
                             ctrlpts[i,:n_stroke,:].unsqueeze(0), ratws[i,:n_stroke,:].unsqueeze(0), starts[i,:n_stroke,:].unsqueeze(0))
+                        n_stroke = out_ctrlpts.shape[0]
+                        drawsketch(out_ctrlpts, out_ratws, out_starts, n_stroke, ax[i, 1+r], invert_y=invert_y)
                     else:
                         if model.variational:
-                            out_param_mu, out_param_std, out_param_mix, out_stopbits, _ = model((h_initial, c_initial), 
-                                ctrlpts[i,:n_stroke,:].unsqueeze(0), None, starts[i,:n_stroke,:].unsqueeze(0))
+                            out_ctrlpts, out_starts = model((h_initial, c_initial), ctrlpts[i,:n_stroke,:].unsqueeze(0), None, starts[i,:n_stroke,:].unsqueeze(0), inference=True)
                         else:
-                            # ignore the KLD
-                            out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), 
-                                ctrlpts[i,:n_stroke,:].unsqueeze(0), None, starts[i,:n_stroke,:].unsqueeze(0))
-
-                    # reshape to make the n_mix visible
-                    out_param_mu = out_param_mu.view(1, -1, n_mix, out_param_mu.shape[-1]//n_mix)
-                    out_param_std = out_param_std.view(1, -1, n_mix, out_param_std.shape[-1]//n_mix)
-
-                    # sampled params at all timesteps
-                    out_ctrlpts = torch.zeros(n_stroke, model.n_ctrlpt)
-                    if model.rational:
-                        out_ratws = torch.zeros(n_stroke, model.n_ratw)
-                    else:
-                        out_ratws = torch.ones(n_stroke, model.n_ratw)
-                    out_starts = torch.zeros(n_stroke, model.n_start)
-
-                    mix_ids = dist.Categorical(out_param_mix.squeeze()).sample()
-                    for t, (mix_id, mu, std) in enumerate(zip(mix_ids, out_param_mu[0,...], out_param_std[0,...])):
-                        mu, std = mu[mix_id.item(), :], std[mix_id.item(), :]
-                        sample = dist.Normal(mu, std).sample()
-                        out_ctrlpts[t, :] = sample[:model.n_ctrlpt]
-                        if model.rational:
-                            out_ratws[t, :] = sample[model.n_ctrlpt:model.n_ctrlpt+model.n_ratw]
-                            out_starts[t, :] = sample[model.n_ctrlpt+model.n_ratw:]
-                        else:
-                            out_starts[t, :] = sample[model.n_ctrlpt:]
-                    drawsketch(out_ctrlpts, out_ratws, out_starts, n_stroke, ax[i, 1+r])
+                             out_ctrlpts, out_starts= model((h_initial, c_initial), ctrlpts[i,:n_stroke,:].unsqueeze(0), None, starts[i,:n_stroke,:].unsqueeze(0), inference=True)
+                        out_ratws = torch.ones(out_ctrlpts.shape[1], model.n_ratw) # FAKE IT
+                        
+                        n_stroke = out_ctrlpts.shape[0]
+                        drawsketch(out_ctrlpts, out_ratws, out_starts, n_stroke, ax[i, 1+r], invert_y=invert_y)
 
             break # just one batch enough
 
