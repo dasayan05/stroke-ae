@@ -115,8 +115,13 @@ def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix,
                         out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), 
                             ctrlpts[i,:n_stroke,:].unsqueeze(0), ratws[i,:n_stroke,:].unsqueeze(0), starts[i,:n_stroke,:].unsqueeze(0))
                     else:
-                        out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), 
-                            ctrlpts[i,:n_stroke,:].unsqueeze(0), None, starts[i,:n_stroke,:].unsqueeze(0))
+                        if model.variational:
+                            out_param_mu, out_param_std, out_param_mix, out_stopbits, _ = model((h_initial, c_initial), 
+                                ctrlpts[i,:n_stroke,:].unsqueeze(0), None, starts[i,:n_stroke,:].unsqueeze(0))
+                        else:
+                            # ignore the KLD
+                            out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), 
+                                ctrlpts[i,:n_stroke,:].unsqueeze(0), None, starts[i,:n_stroke,:].unsqueeze(0))
 
                     # reshape to make the n_mix visible
                     out_param_mu = out_param_mu.view(1, -1, n_mix, out_param_mu.shape[-1]//n_mix)

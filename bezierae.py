@@ -127,7 +127,7 @@ class RNNBezierAE(nn.Module):
                     return latent_ctrlpt_mean, torch.exp(0.5 * latent_ctrlpt_logvar)
 
 class RNNSketchAE(nn.Module):
-    def __init__(self, n_inps, n_hidden, n_layer = 2, n_mixture = 3, dropout = 0.8, eps = 1e-8, rational = True):
+    def __init__(self, n_inps, n_hidden, n_layer = 2, n_mixture = 3, dropout = 0.8, eps = 1e-8, rational = True, variational = False):
         super().__init__()
 
         # Track parameters
@@ -140,6 +140,7 @@ class RNNSketchAE(nn.Module):
         self.n_params = self.n_ctrlpt + (self.n_ratw if rational else 0) + self.n_start
         self.n_mixture = n_mixture
         self.rational = rational
+        self.variational = variational
 
         self.eps = eps
 
@@ -149,6 +150,8 @@ class RNNSketchAE(nn.Module):
 
         # Other transformations
         self.hc_to_latent = nn.Linear(self.n_hc, self.n_latent) # encoder side
+        if self.variational:
+            self.hc_to_latent_logvar = nn.Linear(self.n_hc, self.n_latent) # encoder side
         self.latent_to_h0_1 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
         self.latent_to_c0_1 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
         self.latent_to_h0_2 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
@@ -162,6 +165,11 @@ class RNNSketchAE(nn.Module):
         self.param_std_arm = nn.Linear(self.n_hidden, self.n_params * self.n_mixture) # put through exp()
         self.param_mix_arm = nn.Linear(self.n_hidden, self.n_mixture) # put through softmax
         self.stopbit_arm = nn.Linear(self.n_hidden, 1)
+
+    def reparam(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return (mu + eps * std)
     
     def forward(self, initials, ctrlpt, ratw, start):
         h_initial, c_initial = initials
@@ -176,6 +184,12 @@ class RNNSketchAE(nn.Module):
 
         hc = torch.cat([hn[0], hn[1], cn[0], cn[1]], -1) # concat all of 'em
         latent = self.hc_to_latent(hc)
+        if self.variational:
+            latent_mean = latent
+            latent_logvar = self.hc_to_latent_logvar(hc)
+            latent = self.reparam(latent, latent_logvar)
+
+            KLD = -0.5 * torch.mean(1 + latent_logvar - latent.pow(2) - latent_logvar.exp())
         #### encoder ends here ####
 
         h01, c01 = self.latent_to_h0_1(latent), self.latent_to_c0_1(latent)
@@ -194,10 +208,16 @@ class RNNSketchAE(nn.Module):
         out_stopbit = torch.sigmoid(self.stopbit_arm(state))
 
         if self.training:
-            return out_param_mu, out_param_std, out_param_mix, out_stopbit
+            if not self.variational:
+                return out_param_mu, out_param_std, out_param_mix, out_stopbit
+            else:
+                return out_param_mu, out_param_std, out_param_mix, out_stopbit, KLD
         else:
-            # as of now, teacher-frocing even in testing
-            return out_param_mu, out_param_std, out_param_mix, out_stopbit
+            if not self.variational:
+                # as of now, teacher-frocing even in testing
+                return out_param_mu, out_param_std, out_param_mix, out_stopbit
+            else:
+                return out_param_mu, out_param_std, out_param_mix, out_stopbit, KLD
             
             # L = input.shape[1]
             # input = input[:,0,:].unsqueeze(1)

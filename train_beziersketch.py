@@ -38,7 +38,8 @@ def main( args ):
     # RNN Sketch model
     n_ratw = args.bezier_degree + 1 - 2
     n_ctrlpt = (args.bezier_degree + 1 - 1) * 2
-    model = RNNSketchAE((n_ctrlpt, n_ratw, 2), args.hidden, dropout=args.dropout, n_mixture=args.n_mix, rational=args.rational)
+    model = RNNSketchAE((n_ctrlpt, n_ratw, 2), args.hidden, dropout=args.dropout, n_mixture=args.n_mix,
+        rational=args.rational, variational=args.variational)
     
     h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
     c_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
@@ -48,6 +49,7 @@ def main( args ):
     optim = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     writer = tb.SummaryWriter(os.path.join(args.base, 'logs', args.tag))
+    linear = lambda e, e0, T: max(min((e - e0) / float(T), 1.), 0.)
 
     count, best_loss = 0, np.inf
     for e in range(args.epochs):
@@ -88,7 +90,14 @@ def main( args ):
             if args.rational:
                 out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
             else:
-                out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, None, starts)
+                if args.variational:
+                    out_param_mu, out_param_std, out_param_mix, out_stopbits, KLD = model((h_initial, c_initial), ctrlpts, None, starts)
+                    ann = linear(e, 0, 10)
+                else:
+                    out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, None, starts)
+                    KLD = 0.
+                    ann = 0.
+            
             loss = []
             for mu_, std_, mix_, b_, c, r, s, b, l in zip(out_param_mu, out_param_std, out_param_mix, out_stopbits,
                                                          ctrlpts,     ratws,     starts,     stopbits, n_strokes):
@@ -107,10 +116,11 @@ def main( args ):
                     stopbitloss = (b - b_).pow(2).mean()
                     loss.append( gmml + stopbitloss )
 
-            loss = sum(loss) / len(loss)
+            recon = sum(loss) / len(loss)
+            loss = recon + KLD * args.wkl * ann
 
             if i % args.interval == 0:
-                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {loss:.4f}')
+                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {recon:.4f} + {ann:.4f} x {KLD:.4f} = {loss:.4f}')
                 writer.add_scalar('train-loss', loss.item(), global_step=count)
                 count += 1
 
@@ -132,7 +142,13 @@ def main( args ):
             if args.rational:
                 out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, ratws, starts)
             else:
-                out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, None, starts)
+                if args.variational:
+                    out_param_mu, out_param_std, out_param_mix, out_stopbits, KLD = model((h_initial, c_initial), ctrlpts, None, starts)
+                    ann = linear(e, 0, 10)
+                else:
+                    out_param_mu, out_param_std, out_param_mix, out_stopbits = model((h_initial, c_initial), ctrlpts, None, starts)
+                    KLD = 0.
+                    ann = 0.
 
             _cpad = torch.zeros(ctrlpts.shape[0], 1, ctrlpts.shape[2], device=device)
             _rpad = torch.zeros(ratws.shape[0], 1, ratws.shape[2], device=device)
@@ -161,7 +177,7 @@ def main( args ):
                     stopbitloss = (-b*torch.log(b_)).mean()
                     loss.append( gmml + stopbitloss )
 
-            loss = sum(loss) / len(loss)
+            loss = sum(loss) / len(loss) + KLD * args.wkl * ann
 
             avg_loss = ((avg_loss * i) + loss.item()) / (i + 1)
 
@@ -199,6 +215,8 @@ if __name__ == '__main__':
     parser.add_argument('-x', '--n_mix', type=int, required=False, default=3, help='no. of GMM mixtures')
     parser.add_argument('--layers', type=int, required=False, default=2, help='no of layers in encoder RNN')
     parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=5, help='degree of the bezier')
+    parser.add_argument('-V', '--variational', action='store_true', help='Impose prior on latent space')
+    parser.add_argument('--wkl', type=float, required=False, default=1.0, help='weight of the KL term')
     
     parser.add_argument('-b','--batch_size', type=int, required=False, default=128, help='batch size')
     parser.add_argument('--dropout', type=float, required=False, default=0.8, help='Dropout rate')
@@ -210,8 +228,8 @@ if __name__ == '__main__':
     parser.add_argument('--rendersketch', action='store_true', help='Render the sketches (debugging purpose)')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('-i', '--interval', type=int, required=False, default=50, help='logging interval')
-    parser.add_argument('--nsamples', type=int, required=False, default=2, help='no. of data samples for inference')
-    parser.add_argument('--rsamples', type=int, required=False, default=3, help='no. of distribution samples for inference')
+    parser.add_argument('--nsamples', type=int, required=False, default=6, help='no. of data samples for inference')
+    parser.add_argument('--rsamples', type=int, required=False, default=5, help='no. of distribution samples for inference')
     args = parser.parse_args()
 
     main( args )
