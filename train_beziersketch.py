@@ -39,7 +39,7 @@ def main( args ):
     n_ratw = args.bezier_degree + 1 - 2
     n_ctrlpt = (args.bezier_degree + 1 - 1) * 2
     model = RNNSketchAE((n_ctrlpt, n_ratw, 2), args.hidden, dropout=args.dropout, n_mixture=args.n_mix,
-        rational=args.rational, variational=args.variational)
+        rational=args.rational, variational=args.variational, concatz=args.concatz)
     
     h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
     c_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
@@ -211,6 +211,7 @@ if __name__ == '__main__':
     parser.add_argument('--embmodel', type=str, required=True, help='path to the pre-trained embedder')
     parser.add_argument('-T', '--stochastic_t', action='store_true', help='Use stochastic t-values')
     parser.add_argument('-R', '--rational', action='store_true', help='Rational bezier curve ?')
+    parser.add_argument('--concatz', action='store_true', help='concat z with all inputs in decoder')
     parser.add_argument('--hidden', type=int, required=False, default=256, help='no. of hidden neurons')
     parser.add_argument('-x', '--n_mix', type=int, required=False, default=3, help='no. of GMM mixtures')
     parser.add_argument('--layers', type=int, required=False, default=2, help='no of layers in encoder RNN')

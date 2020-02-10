@@ -127,7 +127,8 @@ class RNNBezierAE(nn.Module):
                     return latent_ctrlpt_mean, torch.exp(0.5 * latent_ctrlpt_logvar)
 
 class RNNSketchAE(nn.Module):
-    def __init__(self, n_inps, n_hidden, n_layer = 2, n_mixture = 3, dropout = 0.8, eps = 1e-8, rational = True, variational = False):
+    def __init__(self, n_inps, n_hidden, n_layer = 2, n_mixture = 3, dropout = 0.8, eps = 1e-8, rational = True,
+        variational = False, concatz = False):
         super().__init__()
 
         # Track parameters
@@ -141,12 +142,16 @@ class RNNSketchAE(nn.Module):
         self.n_mixture = n_mixture
         self.rational = rational
         self.variational = variational
+        self.concatz = concatz
 
         self.eps = eps
 
         # Layer definition
         self.encoder = nn.LSTM(self.n_params, self.n_hidden, self.n_layer, bidirectional=True, batch_first=True, dropout=dropout)
-        self.decoder = nn.LSTM(self.n_params, 2 * self.n_hidden, self.n_layer, bidirectional=False, batch_first=True, dropout=dropout)
+        if not self.concatz:
+            self.decoder = nn.LSTM(self.n_params, 2 * self.n_hidden, self.n_layer, bidirectional=False, batch_first=True, dropout=dropout)
+        else:
+            self.decoder = nn.LSTM(self.n_params + self.n_latent, 2 * self.n_hidden, self.n_layer, bidirectional=False, batch_first=True, dropout=dropout)
 
         # Other transformations
         self.hc_to_latent = nn.Linear(self.n_hc, self.n_latent) # encoder side
@@ -194,6 +199,9 @@ class RNNSketchAE(nn.Module):
         h0 = self.tanh(torch.stack([h01, h02], 0))
         c0 = self.tanh(torch.stack([c01, c02], 0))
 
+        if self.concatz:
+            latent_c = latent.view(-1, 1, self.n_latent).repeat(1, input.shape[1], 1)
+            input = torch.cat([input, latent_c], -1)
         state, _ = self.decoder(input, (h0, c0))
 
         # out_ctrlpt = self.ctrlpt_arm(state)
@@ -213,11 +221,14 @@ class RNNSketchAE(nn.Module):
             
             if inference:
                 L = input.shape[1] # just as a safety (see the for loop)
-                input = torch.zeros_like(input[:,0,:].unsqueeze(1)) # 1x1xF
+                input = torch.zeros(1, 1, self.n_params, device=input.device)
                 stop = False
 
                 out_ctrlpts, out_ratws, out_starts = [], [], []
                 for _ in range(L + 5):
+                    if self.concatz:
+                        latent_c = latent.view(1, 1, self.n_latent)
+                        input = torch.cat([input, latent_c], -1)
                     state, (h1, c1) = self.decoder(input, (h0, c0))
                     
                     out_param_mu = self.param_mu_arm(state).squeeze()
