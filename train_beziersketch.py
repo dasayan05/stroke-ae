@@ -6,6 +6,7 @@ from torch.utils import tensorboard as tb
 from quickdraw.quickdraw import QuickDraw
 from bezierae import RNNBezierAE, RNNSketchAE, gmm_loss
 from infer_beziersketch import inference, drawsketch, stroke_embed
+from npz import NPZWriter
 
 def main( args ):
     chosen_classes = [ 'cat', 'chair', 'mosquito', 'firetruck', 'owl', 'pig', 'face', 'purse', 'shoe' ]
@@ -49,6 +50,7 @@ def main( args ):
     optim = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     writer = tb.SummaryWriter(os.path.join(args.base, 'logs', args.tag))
+    npzwriter = NPZWriter(args.npzfile)
     linear = lambda e, e0, T: max(min((e - e0) / float(T), 1.), 0.)
 
     count, best_loss = 0, np.inf
@@ -61,6 +63,8 @@ def main( args ):
                 else:
                     ctrlpts, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
                     ratws = torch.ones(args.batch_size, ctrlpts.shape[1], n_ratw, device=device) # FAKE IT
+                    if e == 0 and args.producenpz:
+                        npzwriter.add(ctrlpts, starts, n_strokes)
             
             if args.rendersketch:
                 fig, ax = plt.subplots(5, 5, figsize=(20, 20))
@@ -127,6 +131,10 @@ def main( args ):
             optim.zero_grad()
             loss.backward()
             optim.step()
+
+        # flush the npz
+        if e == 0 and args.producenpz:
+            npzwriter.flush()
 
         # evaluation phase
         avg_loss = 0.
@@ -228,6 +236,8 @@ if __name__ == '__main__':
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')
     parser.add_argument('--rendersketch', action='store_true', help='Render the sketches (debugging purpose)')
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
+    parser.add_argument('--npzfile', type=str, required=False, default='ctrlpt.npz', help='SketchRNN style .npz for control points')
+    parser.add_argument('--producenpz', action='store_true', help='Produce npz')
     parser.add_argument('-i', '--interval', type=int, required=False, default=50, help='logging interval')
     parser.add_argument('--nsamples', type=int, required=False, default=6, help='no. of data samples for inference')
     parser.add_argument('--rsamples', type=int, required=False, default=5, help='no. of distribution samples for inference')
