@@ -146,25 +146,22 @@ class RNNSketchAE(nn.Module):
 
         # Layer definition
         self.encoder = nn.LSTM(self.n_params, self.n_hidden, self.n_layer, bidirectional=True, batch_first=True, dropout=dropout)
-        self.decoder = nn.LSTM(self.n_params, self.n_hidden, self.n_layer, bidirectional=False, batch_first=True, dropout=dropout)
+        self.decoder = nn.LSTM(self.n_params, 2 * self.n_hidden, self.n_layer, bidirectional=False, batch_first=True, dropout=dropout)
 
         # Other transformations
         self.hc_to_latent = nn.Linear(self.n_hc, self.n_latent) # encoder side
         if self.variational:
             self.hc_to_latent_logvar = nn.Linear(self.n_hc, self.n_latent) # encoder side
-        self.latent_to_h0_1 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
-        self.latent_to_c0_1 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
-        self.latent_to_h0_2 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
-        self.latent_to_c0_2 = nn.Linear(self.n_latent, self.n_hidden) # decoder side
+        self.latent_to_h0_1 = nn.Linear(self.n_latent, self.n_hidden * 2) # decoder side
+        self.latent_to_c0_1 = nn.Linear(self.n_latent, self.n_hidden * 2) # decoder side
+        self.latent_to_h0_2 = nn.Linear(self.n_latent, self.n_hidden * 2) # decoder side
+        self.latent_to_c0_2 = nn.Linear(self.n_latent, self.n_hidden * 2) # decoder side
         self.tanh = nn.Tanh()
         
-        # self.ctrlpt_arm = nn.Linear(self.n_hidden, self.n_ctrlpt)
-        # self.ratw_arm = nn.Linear(self.n_hidden, self.n_ratw)
-        # self.start_arm = nn.Linear(self.n_hidden, self.n_start)
-        self.param_mu_arm = nn.Linear(self.n_hidden, self.n_params * self.n_mixture)
-        self.param_std_arm = nn.Linear(self.n_hidden, self.n_params * self.n_mixture) # put through exp()
-        self.param_mix_arm = nn.Linear(self.n_hidden, self.n_mixture) # put through softmax
-        self.stopbit_arm = nn.Linear(self.n_hidden, 1)
+        self.param_mu_arm = nn.Linear(self.n_hidden * 2, self.n_params * self.n_mixture)
+        self.param_std_arm = nn.Linear(self.n_hidden * 2, self.n_params * self.n_mixture) # put through exp()
+        self.param_mix_arm = nn.Linear(self.n_hidden * 2, self.n_mixture) # put through softmax
+        self.stopbit_arm = nn.Linear(self.n_hidden * 2, 1)
 
     def reparam(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
