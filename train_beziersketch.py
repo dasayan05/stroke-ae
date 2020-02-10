@@ -55,7 +55,6 @@ def main( args ):
     for e in range(args.epochs):
         model.train()
         for i, B in enumerate(qdltrain):
-            break
             with torch.no_grad():
                 if args.rational:
                     ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
@@ -133,7 +132,6 @@ def main( args ):
         avg_loss = 0.
         model.eval()
         for i, B in enumerate(qdltest):
-            break
             with torch.no_grad():
                 if args.rational:
                     ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
