@@ -137,7 +137,6 @@ def main( args ):
             npzwriter.flush()
 
         # evaluation phase
-        avg_loss = 0.
         model.eval()
         for i, B in enumerate(qdltest):
             with torch.no_grad():
@@ -189,11 +188,9 @@ def main( args ):
 
             avg_loss = ((avg_loss * i) + loss.item()) / (i + 1)
 
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            print(f'[Testing: -/{e}/{args.epochs}] -> Loss: {avg_loss:.4f}')
-            torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
-            writer.add_scalar('test-loss', avg_loss, global_step=e)
+        print(f'[Testing: -/{e}/{args.epochs}] -> Loss: {avg_loss:.4f}')
+        torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
+        writer.add_scalar('test-loss', avg_loss, global_step=e)
             
         savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
         inference(qdtest.get_dataloader(args.batch_size), model, embedder, emblayers=args.emblayers, embhidden=args.embhidden,
