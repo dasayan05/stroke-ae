@@ -137,6 +137,7 @@ def main( args ):
             npzwriter.flush()
 
         # evaluation phase
+        avg_loss = 0.
         model.eval()
         for i, B in enumerate(qdltest):
             with torch.no_grad():
