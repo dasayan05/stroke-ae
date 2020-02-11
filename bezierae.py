@@ -225,7 +225,7 @@ class RNNSketchAE(nn.Module):
                 stop = False
 
                 out_ctrlpts, out_ratws, out_starts = [], [], []
-                for _ in range(L + 5):
+                for _ in range(L):
                     if self.concatz:
                         latent_c = latent.view(1, 1, self.n_latent)
                         input = torch.cat([input, latent_c], -1)
