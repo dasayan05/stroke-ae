@@ -13,7 +13,7 @@ def main( args ):
     if args.iam:
         chosen_classes = ['iam']
 
-    qd = QuickDraw(args.root, categories=chosen_classes[args.n_class], max_sketches_each_cat=args.max_sketches_each_cat,
+    qd = QuickDraw(args.root, categories=[chosen_classes[args.n_class],], max_sketches_each_cat=args.max_sketches_each_cat,
         verbose=True, normalize_xy=True, start_from_zero=False, mode=QuickDraw.STROKESET, raw=args.raw, npz=args.npz)
     
     qdtrain, qdtest = qd.split(0.8)
@@ -71,13 +71,13 @@ def main( args ):
                 for b in range(ctrlpts.shape[0]):
                     if b > 4:
                         break
-                    drawsketch(ctrlpts[b], ratws[b], starts[b], n_strokes[b], draw_axis=ax[b, 0])
+                    drawsketch(ctrlpts[b], ratws[b], starts[b], n_strokes[b], draw_axis=ax[b, 0], invert_y=not args.npz)
                     ax[b, 0].invert_yaxis()
                     for j in range(1, 5):
                         cdist = Normal(ctrlpts[b], torch.ones_like(ctrlpts[b]) * 0.01)
                         rdist = Normal(ratws[b], torch.ones_like(ratws[b]) * 0.01)
                         sdist = Normal(starts[b], torch.ones_like(starts[b]) * 0.01)
-                        drawsketch(cdist.sample(), rdist.sample(), sdist.sample(), n_strokes[b], draw_axis=ax[b, j])
+                        drawsketch(cdist.sample(), rdist.sample(), sdist.sample(), n_strokes[b], draw_axis=ax[b, j], invert_y=not args.npz)
                         ax[b, j].invert_yaxis()
                 plt.savefig(f'junks/{e}_{i}.png')
                 plt.close()

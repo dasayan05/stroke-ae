@@ -18,11 +18,11 @@ def main( args ):
     if args.iam:
         chosen_classes = ['iam']
     
-    qds = QuickDraw(args.root, categories=chosen_classes[args.n_class], raw=args.raw, npz=args.npz,
+    qds = QuickDraw(args.root, categories=[chosen_classes[args.n_class],], raw=args.raw, npz=args.npz,
         max_sketches_each_cat=args.max_sketches_each_cat, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
     
-    qds_infer = QuickDraw(args.root, categories=chosen_classes[args.n_class], filter_func=lambda s: length_gt(s, 5),
+    qds_infer = QuickDraw(args.root, categories=[chosen_classes[args.n_class],], filter_func=lambda s: length_gt(s, 5),
         raw=args.raw, npz=args.npz, max_sketches_each_cat=100, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
 
     # chosen device
