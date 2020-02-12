@@ -18,11 +18,11 @@ def main( args ):
     if args.iam:
         chosen_classes = ['iam']
     
-    qds = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], raw=args.raw, npz=args.npz,
+    qds = QuickDraw(args.root, categories=chosen_classes[args.n_class], raw=args.raw, npz=args.npz,
         max_sketches_each_cat=args.max_sketches_each_cat, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
     qdl = qds.get_dataloader(args.batch_size)
     
-    qds_infer = QuickDraw(args.root, categories=chosen_classes[:args.n_classes], filter_func=lambda s: length_gt(s, 5),
+    qds_infer = QuickDraw(args.root, categories=chosen_classes[args.n_class], filter_func=lambda s: length_gt(s, 5),
         raw=args.raw, npz=args.npz, max_sketches_each_cat=100, mode=QuickDraw.STROKE, start_from_zero=True, verbose=True, problem=QuickDraw.ENCDEC)
 
     # chosen device
@@ -117,7 +117,7 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=str, required=True, help='quickdraw binary file')
     parser.add_argument('--iam', action='store_true', help='Use IAM dataset')
     parser.add_argument('--base', type=str, required=False, default='.', help='base folder of operation (needed for condor)')
-    parser.add_argument('--n_classes', '-c', type=int, required=False, default=3, help='no. of classes')
+    parser.add_argument('--n_class', '-c', type=int, required=False, default=0, help='no. of classes')
     parser.add_argument('--raw', action='store_true', help='Use raw QuickDraw data')
     parser.add_argument('--npz', action='store_true', help='Use .npz QuickDraw data')
     parser.add_argument('--max_sketches_each_cat', '-n', type=int, required=False, default=25000, help='Max no. of sketches each category')
