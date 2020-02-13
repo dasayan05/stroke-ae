@@ -46,7 +46,7 @@ def main( args ):
 
         model.train()
         for i, (X, _) in enumerate(qdl):
-            break
+            # break
             h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
             c_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
             
