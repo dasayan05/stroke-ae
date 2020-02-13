@@ -6,9 +6,10 @@ from torch.nn.utils.rnn import pad_packed_sequence
 from quickdraw.quickdraw import QuickDraw
 from beziercurve import draw_bezier
 
-def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezier_degree, savefile):
+def inference(qdl, model, layers, hidden, nsamples, rsamples, bezier_degree_low, bezier_degree_high, savefile):
     with torch.no_grad():
-        fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=(rsamples * 4, nsamples * 4))
+        rsamples = bezier_degree_high - bezier_degree_low + 1
+        fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=((rsamples + 1) * 4, nsamples * 4))
         for i, (X, _) in enumerate(qdl):
             if i >= nsamples:
                 break
@@ -25,25 +26,22 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
             else:
                 X_numpy = X_.squeeze().numpy()
 
-            if not variational:
-                if model.rational:
-                    ctrlpt, ratw = model(X, h_initial, c_initial)
-                else:
-                    ctrlpt = model(X, h_initial, c_initial)
-                normal = torch.distributions.Normal(ctrlpt.squeeze(), torch.zeros_like(ctrlpt.squeeze()))
+            if model.rational:
+                ctrlpt, ratw = model(X, h_initial, c_initial)
             else:
-                ctrlpt_mu, ctrlpt_std, ratw = model(X, h_initial, c_initial)
-                ctrlpt_mu, ctrlpt_std = ctrlpt_mu.view(-1, bezier_degree + 1, 2), ctrlpt_std.view(-1, bezier_degree + 1, 2)
-                normal = torch.distributions.Normal(ctrlpt_mu.squeeze(), ctrlpt_std.squeeze())
+                ctrlpt = model(X, h_initial, c_initial)
+
+            # normal = torch.distributions.Normal(ctrlpt.squeeze(), torch.zeros_like(ctrlpt.squeeze()))
 
             ax[i, 0].scatter(X_numpy[:, 0], X_numpy[:,1])
             ax[i, 0].plot(X_numpy[:,0], X_numpy[:,1])
+            ax[i, 0].set_xticks([]); ax[i, 0].set_yticks([])
 
-            for s in range(rsamples):
-                ctrlpt_ = normal.sample()
+            for z in range(bezier_degree_low, bezier_degree_high + 1):
+                ctrlpt_ = ctrlpt[z - bezier_degree_low].squeeze()
                 
                 if model.rational:
-                    ratw_ = ratw.squeeze()
+                    ratw_ = ratw[z - bezier_degree_low].squeeze()
                     ratw_ = torch.cat([torch.tensor([5.,], device=ratw_.device), ratw_, torch.tensor([5.,], device=ratw_.device)], 0)
                     ratw_ = torch.sigmoid(ratw_)
                 else:
@@ -54,8 +52,9 @@ def inference(qdl, model, layers, hidden, nsamples, rsamples, variational, bezie
                 ctrlpt_ = torch.cat([P0, ctrlpt_], 0)
                 ctrlpt_ = torch.cumsum(ctrlpt_, 0)
                 draw_bezier(ctrlpt_.cpu().numpy(), ratw_.cpu().numpy() if ratw_ is not None else ratw_,
-                    annotate=False, draw_axis=ax[i, s + 1])
+                    annotate=False, draw_axis=ax[i, z - bezier_degree_low + 1])
+                ax[i, z - bezier_degree_low + 1].set_xticks([])
+                ax[i, z - bezier_degree_low + 1].set_yticks([])
             
-        plt.xticks([]); plt.yticks([])
         plt.savefig(savefile)
         plt.close()

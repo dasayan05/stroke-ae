@@ -28,8 +28,8 @@ def main( args ):
     # chosen device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    model = RNNBezierAE(2, args.hidden, args.layers, args.bezier_degree, bidirectional=True,
-        variational=args.variational, dropout=args.dropout, stochastic_t=args.stochastic_t, rational=args.rational)
+    model = RNNBezierAE(2, args.hidden, args.layers, args.latent, args.bezier_degree_low, args.bezier_degree_high,
+        bidirectional=True, dropout=args.dropout, rational=args.rational)
     
     model = model.float()
     if torch.cuda.is_available():
@@ -46,7 +46,7 @@ def main( args ):
 
         model.train()
         for i, (X, _) in enumerate(qdl):
-            # break
+            break
             h_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
             c_initial = torch.zeros(args.layers * 2, args.batch_size, args.hidden, dtype=torch.float32)
             
@@ -56,33 +56,19 @@ def main( args ):
             # Unpacking the X, nothing more
             X_, L_ = pad_packed_sequence(X, batch_first=True)
             
-            if args.anneal_KLD:
-                # Annealing factor for KLD term
-                linear = lambda e, e0, T: max(min((e - e0) / float(T), 1.), 0.)
-                anneal_factor = linear(e, 100, 50)
-            else:
-                anneal_factor = 1.
-
-            if args.variational:
-                out, regu, KLD = model(X, h_initial, c_initial)
-            else:
-                out, regu = model(X, h_initial, c_initial)
-
+            out, regu = model(X, h_initial, c_initial)
 
             batch_losses = []
-            for o, x_, l_ in zip(out, X_, L_):
-                # per sample iteration
-                batch_losses.append( mseloss(o[:l_, :], x_[:l_, :]) )
+            for z_out in out:
+                for o, x_, l_ in zip(z_out, X_, L_):
+                    # per sample iteration
+                    batch_losses.append( mseloss(o[:l_, :], x_[:l_, :]) )
             
+            # breakpoint()
             REC_loss = sum(batch_losses) / len(batch_losses)
             REC_loss = REC_loss + regu * args.regp
 
-            if args.variational:
-                KLD_loss = KLD * anneal_factor * args.varw
-            else:
-                KLD_loss = torch.tensor(0.)
-
-            loss = REC_loss + KLD_loss
+            loss = REC_loss
 
             optim.zero_grad()
             loss.backward()
@@ -91,21 +77,16 @@ def main( args ):
             if i % args.interval == 0:
                 count += 1
                 print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {REC_loss:.4f} + {KLD_loss:.4f}')
-                
-                if args.variational:
-                    writer.add_scalar('train/loss/REC', REC_loss.item(), global_step=count)
-                    writer.add_scalar('train/loss/KLD', KLD_loss.item(), global_step=count)
-                    writer.add_scalar('train/loss/total', loss.item(), global_step=count)
-                else:
-                    writer.add_scalar('train/loss/total', loss.item(), global_step=count)
+                writer.add_scalar('train/loss/total', loss.item(), global_step=count)
 
         # save after every epoch
         torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
 
         model.eval()
         savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
-        inference(qds_infer.get_dataloader(1), model, layers=args.layers, hidden=args.hidden, variational=args.variational,
-                bezier_degree=args.bezier_degree, savefile=savefile, nsamples=args.nsample, rsamples=args.rsample)
+        inference(qds_infer.get_dataloader(1), model, layers=args.layers, hidden=args.hidden,
+                bezier_degree_low=args.bezier_degree_low, bezier_degree_high=args.bezier_degree_high,
+                savefile=savefile, nsamples=args.nsample, rsamples=args.rsample)
 
         # invoke scheduler
         sched.step()
@@ -122,19 +103,17 @@ if __name__ == '__main__':
     parser.add_argument('--npz', action='store_true', help='Use .npz QuickDraw data')
     parser.add_argument('--max_sketches_each_cat', '-n', type=int, required=False, default=25000, help='Max no. of sketches each category')
 
-    parser.add_argument('-V', '--variational', action='store_true', help='Impose prior on latent space')
-    parser.add_argument('-T', '--stochastic_t', action='store_true', help='Use stochastic t-values')
     parser.add_argument('-R', '--rational', action='store_true', help='Rational bezier curve ?')
     parser.add_argument('--hidden', type=int, required=False, default=16, help='no. of hidden neurons')
     parser.add_argument('--layers', type=int, required=False, default=1, help='no of layers in encoder RNN')
-    parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=5, help='degree of the bezier')
-    
+    parser.add_argument('--latent', type=int, required=False, default=256, help='length of the degree agnostic latent vector')
+    parser.add_argument('-y', '--bezier_degree_low', type=int, required=False, default=9, help='lowest degree of the bezier')
+    parser.add_argument('-z', '--bezier_degree_high', type=int, required=False, default=9, help='highest degree of the bezier')
+
     parser.add_argument('-b','--batch_size', type=int, required=False, default=128, help='batch size')
     parser.add_argument('--dropout', type=float, required=False, default=0.8, help='Dropout rate')
     parser.add_argument('--lr', type=float, required=False, default=1e-4, help='learning rate')
     parser.add_argument('-e', '--epochs', type=int, required=False, default=40, help='no of epochs')
-    parser.add_argument('--varw', type=float, required=False, default=1., help='Constant multiplier of the KLD term')
-    parser.add_argument('--anneal_KLD', action='store_true', help='Increase annealing factor of KLD gradually')
     parser.add_argument('--regp', type=float, required=False, default=1e-2, help='Regularizer weight on control points')
 
     parser.add_argument('--tag', type=str, required=False, default='main', help='run identifier')
