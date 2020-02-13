@@ -6,7 +6,7 @@ from torch.nn.utils.rnn import pad_packed_sequence
 from quickdraw.quickdraw import QuickDraw
 from beziercurve import draw_bezier
 
-def inference(qdl, model, layers, hidden, nsamples, rsamples, bezier_degree_low, bezier_degree_high, savefile):
+def inference(qdl, model, layers, hidden, nsamples, bezier_degree_low, bezier_degree_high, savefile):
     with torch.no_grad():
         rsamples = bezier_degree_high - bezier_degree_low + 1
         fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=((rsamples + 1) * 4, nsamples * 4))

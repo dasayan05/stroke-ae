@@ -86,7 +86,7 @@ def main( args ):
         savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
         inference(qds_infer.get_dataloader(1), model, layers=args.layers, hidden=args.hidden,
                 bezier_degree_low=args.bezier_degree_low, bezier_degree_high=args.bezier_degree_high,
-                savefile=savefile, nsamples=args.nsample, rsamples=args.rsample)
+                savefile=savefile, nsamples=args.nsample)
 
         # invoke scheduler
         sched.step()
@@ -120,7 +120,6 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--modelname', type=str, required=False, default='model', help='name of saved model')
     parser.add_argument('-i', '--interval', type=int, required=False, default=100, help='logging interval')
     parser.add_argument('--nsample', type=int, required=False, default=6, help='no. of data samples for inference')
-    parser.add_argument('--rsample', type=int, required=False, default=6, help='no. of distribution samples for inference')
     args = parser.parse_args()
 
     main( args )
