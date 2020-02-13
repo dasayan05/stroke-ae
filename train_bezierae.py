@@ -76,7 +76,7 @@ def main( args ):
             
             if i % args.interval == 0:
                 count += 1
-                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {REC_loss:.4f} + {KLD_loss:.4f}')
+                print(f'[Training: {i}/{e}/{args.epochs}] -> Loss: {REC_loss:.4f}')
                 writer.add_scalar('train/loss/total', loss.item(), global_step=count)
 
         # save after every epoch
