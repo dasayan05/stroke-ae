@@ -26,7 +26,7 @@ def drawsketch(ctrlpts, ratws, st_starts, n_stroke, draw_axis=plt.gca(), invert_
     if invert_y:
         draw_axis.invert_yaxis()
 
-def stroke_embed(batch, initials, embedder, variational=False):
+def stroke_embed(batch, initials, embedder, bezier_degree, bezier_degree_low, variational=False):
     h_initial, c_initial = initials
     # Redundant, but thats fine
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -42,16 +42,13 @@ def stroke_embed(batch, initials, embedder, variational=False):
         ls = [st.shape[0] for st in sk]
         sk = pad_sequence(sk, batch_first=True)
         sk = pack_padded_sequence(sk, ls, batch_first=True, enforce_sorted=False)
-        if not variational:
-            if embedder.rational:
-                emb_ctrlpt, emb_ratw = embedder(sk, h_initial, c_initial)
-            else:
-                emb_ctrlpt = embedder(sk, h_initial, c_initial)
+
+        if embedder.rational:
+            emb_ctrlpt, emb_ratw = embedder(sk, h_initial, c_initial)
         else:
-            if embedder.rational:
-                emb_ctrlpt, _, emb_ratw = embedder(sk, h_initial, c_initial)
-            else:
-                emb_ctrlpt, _ = embedder(sk, h_initial, c_initial)
+            emb_ctrlpt = embedder(sk, h_initial, c_initial)
+        
+        emb_ctrlpt = emb_ctrlpt[bezier_degree - bezier_degree_low]
         
         sketches_ctrlpt.append(emb_ctrlpt.view(len(ls), -1))
         if embedder.rational:
@@ -79,7 +76,7 @@ def stroke_embed(batch, initials, embedder, variational=False):
         return sketches_ctrlpt, sketches_st_starts, sketches_stopbits, n_strokes
 
 def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix,
-    nsamples, rsamples, variational, bezier_degree, savefile, device, invert_y):
+    nsamples, rsamples, variational, bezier_degree, bezier_degree_low, savefile, device, invert_y):
     with torch.no_grad():
         fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=(rsamples * 8, nsamples * 4))
         for i, B in enumerate(qdl):
@@ -93,9 +90,9 @@ def inference(qdl, model, embedder, emblayers, embhidden, layers, hidden, n_mix,
 
             with torch.no_grad():
                 if model.rational:
-                    ctrlpts, ratws, starts, _, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                    ctrlpts, ratws, starts, _, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder, bezier_degree, bezier_degree_low)
                 else:
-                    ctrlpts, starts, _, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                    ctrlpts, starts, _, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder, bezier_degree, bezier_degree_low)
                     ratws = torch.ones(ctrlpts.shape[0], ctrlpts.shape[1], model.n_ratw, device=ctrlpts.device)
 
                 _cpad = torch.zeros(ctrlpts.shape[0], 1, ctrlpts.shape[2], device=device)

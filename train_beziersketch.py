@@ -23,8 +23,8 @@ def main( args ):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     # Embedder model (pretrained and freezed)
-    embedder = RNNBezierAE(2, args.embhidden, args.emblayers, args.bezier_degree, bidirectional=True,
-        variational=args.embvariational, stochastic_t=args.stochastic_t, rational=args.rational)
+    embedder = RNNBezierAE(2, args.embhidden, args.emblayers, args.emblatent, args.bezier_degree_low, args.bezier_degree_high,
+        bidirectional=True, rational=args.rational)
     embmodel = os.path.join(args.base, args.embmodel)
     if os.path.exists(embmodel):
         embedder.load_state_dict(torch.load(embmodel))
@@ -59,9 +59,9 @@ def main( args ):
         for i, B in enumerate(qdltrain):
             with torch.no_grad():
                 if args.rational:
-                    ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                    ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder, args.bezier_degree, args.bezier_degree_low)
                 else:
-                    ctrlpts, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder)
+                    ctrlpts, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder, args.bezier_degree, args.bezier_degree_low)
                     ratws = torch.ones(args.batch_size, ctrlpts.shape[1], n_ratw, device=device) # FAKE IT
                     if e == 0 and args.producenpz:
                         npzwriter.add(ctrlpts, starts, n_strokes)
@@ -81,6 +81,7 @@ def main( args ):
                         ax[b, j].invert_yaxis()
                 plt.savefig(f'junks/{e}_{i}.png')
                 plt.close()
+
 
             _cpad = torch.zeros(ctrlpts.shape[0], 1, ctrlpts.shape[2], device=device)
             _rpad = torch.zeros(ratws.shape[0], 1, ratws.shape[2], device=device)
@@ -195,8 +196,8 @@ def main( args ):
             
         savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
         inference(qdtest.get_dataloader(args.batch_size), model, embedder, emblayers=args.emblayers, embhidden=args.embhidden,
-            layers=args.layers, hidden=args.hidden, variational=False, bezier_degree=args.bezier_degree, n_mix=args.n_mix,
-            nsamples=args.nsamples, rsamples=args.rsamples, savefile=savefile, device=device, invert_y=not args.raw)
+            layers=args.layers, hidden=args.hidden, variational=False, bezier_degree=args.bezier_degree, bezier_degree_low=args.bezier_degree_low,
+            n_mix=args.n_mix, nsamples=args.nsamples, rsamples=args.rsamples, savefile=savefile, device=device, invert_y=not args.raw)
 
 
 if __name__ == '__main__':
@@ -214,6 +215,7 @@ if __name__ == '__main__':
     parser.add_argument('--embvariational', action='store_true', help='Impose prior on latent space (in embedder)')
     parser.add_argument('--embhidden', type=int, required=False, default=16, help='no. of hidden neurons (in embedder)')
     parser.add_argument('--emblayers', type=int, required=False, default=1, help='no of layers (in embedder)')
+    parser.add_argument('--emblatent', type=int, required=False, default=256, help='dim of latent vector (in embedder)')
     parser.add_argument('--embmodel', type=str, required=True, help='path to the pre-trained embedder')
     parser.add_argument('-T', '--stochastic_t', action='store_true', help='Use stochastic t-values')
     parser.add_argument('-R', '--rational', action='store_true', help='Rational bezier curve ?')
@@ -221,7 +223,11 @@ if __name__ == '__main__':
     parser.add_argument('--hidden', type=int, required=False, default=256, help='no. of hidden neurons')
     parser.add_argument('-x', '--n_mix', type=int, required=False, default=3, help='no. of GMM mixtures')
     parser.add_argument('--layers', type=int, required=False, default=2, help='no of layers in encoder RNN')
-    parser.add_argument('-z', '--bezier_degree', type=int, required=False, default=5, help='degree of the bezier')
+    
+    parser.add_argument('--bezier_degree', type=int, required=False, default=9, help='degree of the bezier')
+    parser.add_argument('-y', '--bezier_degree_low', type=int, required=False, default=9, help='lowest degree of the bezier')
+    parser.add_argument('-z', '--bezier_degree_high', type=int, required=False, default=9, help='highest degree of the bezier')
+
     parser.add_argument('-V', '--variational', action='store_true', help='Impose prior on latent space')
     parser.add_argument('--wkl', type=float, required=False, default=1.0, help='weight of the KL term')
     
