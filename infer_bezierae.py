@@ -9,7 +9,7 @@ from beziercurve import draw_bezier
 def inference(qdl, model, layers, hidden, nsamples, bezier_degree_low, bezier_degree_high, savefile):
     with torch.no_grad():
         rsamples = bezier_degree_high - bezier_degree_low + 1
-        fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=((rsamples + 1) * 4, nsamples * 4))
+        fig, ax = plt.subplots(nsamples, (rsamples + 1), figsize=((rsamples + 1) * 2, nsamples * 2))
         for i, (X, _) in enumerate(qdl):
             if i >= nsamples:
                 break
@@ -52,9 +52,13 @@ def inference(qdl, model, layers, hidden, nsamples, bezier_degree_low, bezier_de
                 ctrlpt_ = torch.cat([P0, ctrlpt_], 0)
                 ctrlpt_ = torch.cumsum(ctrlpt_, 0)
                 draw_bezier(ctrlpt_.cpu().numpy(), ratw_.cpu().numpy() if ratw_ is not None else ratw_,
-                    annotate=False, draw_axis=ax[i, z - bezier_degree_low + 1])
+                    annotate=False, draw_axis=ax[i, z - bezier_degree_low + 1],
+                    ctrlPointPlotKwargs=dict(color='g', linestyle='--', marker='X', alpha=0.4),
+                    curvePlotKwagrs=dict(color='r'))
                 ax[i, z - bezier_degree_low + 1].set_xticks([])
                 ax[i, z - bezier_degree_low + 1].set_yticks([])
+                if i == 0:
+                    ax[i, z - bezier_degree_low + 1].set_title(f'$n={z}$')
             
-        plt.savefig(savefile)
+        plt.savefig(savefile, bbox_inches='tight', inches=0)
         plt.close()

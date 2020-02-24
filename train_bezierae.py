@@ -83,7 +83,7 @@ def main( args ):
         torch.save(model.state_dict(), os.path.join(args.base, args.modelname))
 
         model.eval()
-        savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.png')
+        savefile = os.path.join(args.base, 'logs', args.tag, str(e) + '.pdf')
         inference(qds_infer.get_dataloader(1), model, layers=args.layers, hidden=args.hidden,
                 bezier_degree_low=args.bezier_degree_low, bezier_degree_high=args.bezier_degree_high,
                 savefile=savefile, nsamples=args.nsample)
