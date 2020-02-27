@@ -15,7 +15,7 @@ def select_degree(ctrlpts, deg_loss):
         for i_stroke, dloss in enumerate(degloss):
             opt_degree = (dloss < 5e-5).nonzero()[0]
             if opt_degree.size != 0:
-                opt_degree = len(dloss) - 1
+                opt_degree = opt_degree[0]
             else:
                 opt_degree = len(dloss) - 1
 
