@@ -43,5 +43,5 @@ class BezierLoss(nn.Module):
         if XY is None:
             return C
         else:
-            l = ((C - XY)**2).mean() + self.reg_weight_p * (self._consecutive_dist(P)**2).mean() + self.reg_weight_r * torch.mean(R)
+            l = ((C - XY)**2).mean() + self.reg_weight_p * (self._consecutive_dist(P)**2).mean()
             return l

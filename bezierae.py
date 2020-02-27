@@ -1,5 +1,7 @@
 import torch
+import numpy as np
 import torch.nn as nn
+import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import torch.distributions as dist
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
@@ -14,6 +16,8 @@ class RNNBezierAE(nn.Module):
         # Track parameters
         self.n_input, self.n_hidden, self.n_layer = n_input, n_hidden, n_layer
         self.n_latent = n_latent
+        self.bezier_degree_low = bezier_degree_low
+        self.bezier_degree_high = bezier_degree_high
         
         self.bezier_degree = list(range(bezier_degree_low, bezier_degree_high + 1))
         self.n_latent_ctrl = [(z + 1 - 1) * 2 for z in self.bezier_degree] # The second '-1' is for Delta_P encoding
@@ -39,7 +43,7 @@ class RNNBezierAE(nn.Module):
             self.ratw_arms = nn.ModuleList([nn.Linear(self.n_latent, self.n_latent_ratw) for r in self.n_latent_ratw])
 
         # Bezier mechanics
-        self.bezierlosses = nn.ModuleList([BezierLoss(z, reg_weight_p=None, reg_weight_r=None) for z in self.bezier_degree])
+        self.bezierlosses = nn.ModuleList([BezierLoss(z, reg_weight_p=1e-3, reg_weight_r=None) for z in self.bezier_degree])
 
     def constraint_t(self, ts, lens):
         ts = ts.squeeze(-1)
@@ -54,7 +58,7 @@ class RNNBezierAE(nn.Module):
         eps = torch.randn_like(std)
         return (mu + eps * std)
 
-    def forward(self, x, h_initial, c_initial):
+    def forward(self, x, h_initial, c_initial, inf_loss=False):
         out, (h_final, c_final) = self.tcell(x, (h_initial, c_initial))
         hns, lens = pad_packed_sequence(out, batch_first=True)
         
@@ -112,7 +116,30 @@ class RNNBezierAE(nn.Module):
             if self.rational:
                 return latent_ctrlpt_return, latent_ratw
             else:
-                return latent_ctrlpt_return
+                if not inf_loss:
+                    return latent_ctrlpt_return
+                else:
+                    out = []
+                    XY, _ = pad_packed_sequence(x, batch_first=True)
+                    for loss, z_ts, z_latent_ctrlpt in zip(self.bezierlosses, ts, latent_ctrlpt):
+                        z_out = []
+                        for t, p, x, l in zip(z_ts, z_latent_ctrlpt, XY, lens):
+                            x = x[:l,:]
+                            z_out.append( loss(p, None, x, ts=t[:l]) )
+                        out.append(z_out)
+
+                    # choose the right degree based on some heuristics
+                    n_degrees = self.bezier_degree_high - self.bezier_degree_low + 1
+                    # i_degree_range = np.arange(self.bezier_degree_low, self.bezier_degree_high + 1)
+                    loss_degs = []
+                    for i in range(lens.shape[0]):
+                        loss_deg = np.array([out[j][i].item() for j in range(n_degrees)])
+                        # plt.plot(i_degree_range * (1./25.), loss_deg)
+                        # plt.show()
+                        # breakpoint()
+                        loss_degs.append(loss_deg)
+
+                    return latent_ctrlpt_return, loss_degs
 
 class RNNSketchAE(nn.Module):
     def __init__(self, n_inps, n_hidden, n_layer = 2, n_mixture = 3, dropout = 0.8, eps = 1e-8, rational = True,

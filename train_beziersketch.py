@@ -8,6 +8,22 @@ from bezierae import RNNBezierAE, RNNSketchAE, gmm_loss
 from infer_beziersketch import inference, drawsketch, stroke_embed
 from npz import NPZWriter
 
+def select_degree(ctrlpts, deg_loss):
+    batch = []
+    for cpts, degloss in zip(ctrlpts, deg_loss):
+        sketch = []
+        for i_stroke, dloss in enumerate(degloss):
+            opt_degree = (dloss < 5e-5).nonzero()[0]
+            if opt_degree.size != 0:
+                opt_degree = len(dloss) - 1
+            else:
+                opt_degree = len(dloss) - 1
+
+            t = cpts[opt_degree][i_stroke,:]
+            sketch.append( t )
+        batch.append(sketch)
+    return batch
+
 def main( args ):
     chosen_classes = [ 'cat', 'chair', 'mosquito', 'firetruck', 'owl', 'pig', 'face', 'purse', 'shoe' ]
     if args.iam:
@@ -61,26 +77,26 @@ def main( args ):
                 if args.rational:
                     ctrlpts, ratws, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder, args.bezier_degree, args.bezier_degree_low)
                 else:
-                    ctrlpts, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder, args.bezier_degree, args.bezier_degree_low)
-                    ratws = torch.ones(args.batch_size, ctrlpts.shape[1], n_ratw, device=device) # FAKE IT
+                    ctrlpts, starts, stopbits, n_strokes = stroke_embed(B, (h_initial_emb, c_initial_emb), embedder, args.bezier_degree, args.bezier_degree_low,
+                        inf_loss=args.producenpz or args.rendersketch)
+                    ratws = torch.ones(args.batch_size, starts.shape[1], n_ratw, device=device) # FAKE IT
                     if e == 0 and args.producenpz:
+                        # ctrlpts = select_degree(*ctrlpts)
+                        ## DO THIS
                         npzwriter.add(ctrlpts, starts, n_strokes)
+                        continue
             
             if args.rendersketch:
-                fig, ax = plt.subplots(5, 5, figsize=(20, 20))
-                for b in range(ctrlpts.shape[0]):
-                    if b > 4:
+                ctrlpts = select_degree(*ctrlpts)
+                for b in range(len(ctrlpts)):
+                    fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+                    if b > 20:
                         break
-                    drawsketch(ctrlpts[b], ratws[b], starts[b], n_strokes[b], draw_axis=ax[b, 0], invert_y=not args.npz)
-                    ax[b, 0].invert_yaxis()
-                    for j in range(1, 5):
-                        cdist = Normal(ctrlpts[b], torch.ones_like(ctrlpts[b]) * 0.01)
-                        rdist = Normal(ratws[b], torch.ones_like(ratws[b]) * 0.01)
-                        sdist = Normal(starts[b], torch.ones_like(starts[b]) * 0.01)
-                        drawsketch(cdist.sample(), rdist.sample(), sdist.sample(), n_strokes[b], draw_axis=ax[b, j], invert_y=not args.npz)
-                        ax[b, j].invert_yaxis()
-                plt.savefig(f'junks/{e}_{i}.png')
-                plt.close()
+                    drawsketch(ctrlpts[b], ratws[b], starts[b], n_strokes[b], draw_axis=ax, invert_y=not args.raw)
+                    ax.set_xticks([]); ax.set_yticks([])
+                    plt.savefig(f'junks/{e}_{i}_{b}.png', bbox_inches='tight', inches=0)
+                    plt.close()
+                continue
 
 
             _cpad = torch.zeros(ctrlpts.shape[0], 1, ctrlpts.shape[2], device=device)
