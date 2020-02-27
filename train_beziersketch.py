@@ -81,9 +81,11 @@ def main( args ):
                         inf_loss=args.producenpz or args.rendersketch)
                     ratws = torch.ones(args.batch_size, starts.shape[1], n_ratw, device=device) # FAKE IT
                     if e == 0 and args.producenpz:
-                        # ctrlpts = select_degree(*ctrlpts)
+                        ctrlpts = select_degree(*ctrlpts)
                         ## DO THIS
                         npzwriter.add(ctrlpts, starts, n_strokes)
+                        if i % 10 == 0:
+                            npzwriter.flush()
                         continue
             
             if args.rendersketch:
@@ -152,6 +154,7 @@ def main( args ):
         # flush the npz
         if e == 0 and args.producenpz:
             npzwriter.flush()
+            exit()
 
         # # evaluation phase
         # avg_loss = 0.
